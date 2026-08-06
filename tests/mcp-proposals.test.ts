@@ -75,3 +75,22 @@ test("MCP removal proposals preserve the working list until review", () => {
   assert.equal(result.proposal.proposed.locations.length, 7);
   assert.equal(result.proposal.proposed.locations.some((location) => location.id === removedId), false);
 });
+
+test("MCP custom SVG import stages a sanitized embedded design", () => {
+  const current = createDefaultProject();
+  const result = buildMcpProposal("stage_custom_pin_import", {
+    name: "AI marker",
+    svg: '<svg viewBox="0 0 20 20" onload="bad()"><circle cx="10" cy="10" r="9" fill="currentColor"/></svg>',
+    assignLocationId: current.locations[0].id,
+    expectedUpdatedAt: current.project.updatedAt,
+    summary: "Add the approved custom marker",
+  }, current);
+  assert.equal(current.customPins.length, 0);
+  assert.equal(result.proposal.proposed.customPins.length, 1);
+  assert.doesNotMatch(result.proposal.proposed.customPins[0].svg, /onload/i);
+  assert.equal(
+    result.proposal.proposed.locations[0].customPinId,
+    result.proposal.proposed.customPins[0].id,
+  );
+  assert.equal(result.removedSvgItems, 1);
+});

@@ -42,6 +42,7 @@ function managedBlock({ projectRoot, executablePath, runtimePath }) {
     "stage_locations_from_csv",
     "stage_locations_remove",
     "stage_map_style_update",
+    "stage_custom_pin_import",
     "replace_project_draft",
   ];
   return [

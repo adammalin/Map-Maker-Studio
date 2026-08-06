@@ -29,6 +29,7 @@ export function createLocation(
     label,
     showLabel: partial.showLabel ?? true,
     pinType: partial.pinType ?? "pin",
+    customPinId: partial.customPinId ?? null,
     pinColor: partial.pinColor ?? "#00662c",
     pinSize: partial.pinSize ?? 16,
     labelColor: partial.labelColor ?? "#373a36",
@@ -65,6 +66,7 @@ export function createDefaultProject(): UsaMapProject {
       showLegend: true,
       stateColors: {},
     },
+    customPins: [],
     locations: sampleLocations.map((location) => createLocation(location)),
   };
 }

@@ -53,6 +53,7 @@ test("local MCP exposes bounded read and proposal tools with correct annotations
       "stage_locations_from_csv",
       "stage_locations_remove",
       "stage_map_style_update",
+      "stage_custom_pin_import",
       "replace_project_draft",
     ]);
     assert.equal(listed.tools.find((tool) => tool.name === "get_current_project")?.annotations?.readOnlyHint, true);

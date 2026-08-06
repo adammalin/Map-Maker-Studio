@@ -1,10 +1,12 @@
 import { parseLocationsCsv } from "./csv";
 import { parseProjectText } from "./project";
+import { createCustomPinDesign } from "./custom-pin";
 import type { AiMapProposal, MapLocation, MapSettings, UsaMapProject } from "../types";
 
 export interface ProposalBuildResult {
   proposal: AiMapProposal;
   importIssues?: Array<{ row: number; city: string; state: string; reason: string }>;
+  removedSvgItems?: number;
 }
 
 const MAP_KEYS = new Set<keyof MapSettings>([
@@ -32,6 +34,7 @@ const LOCATION_KEYS = new Set<keyof MapLocation>([
   "label",
   "showLabel",
   "pinType",
+  "customPinId",
   "pinColor",
   "pinSize",
   "labelColor",
@@ -217,6 +220,32 @@ export function buildMcpProposal(
         `Review ${Object.keys(patch).join(", ")}.`,
         "Locations and project identity remain unchanged.",
       ]),
+    };
+  }
+
+  if (operation === "stage_custom_pin_import") {
+    const svg = typeof input.svg === "string" ? input.svg : "";
+    const name = text(input.name, "Custom pin");
+    const assignLocationId = typeof input.assignLocationId === "string" ? input.assignLocationId : "";
+    if (assignLocationId && !current.locations.some((location) => location.id === assignLocationId)) {
+      throw new Error("The location selected for the custom pin was not found.");
+    }
+    const { design, removedItems } = createCustomPinDesign(svg, `${name}.svg`);
+    const candidate = structuredClone(current);
+    candidate.customPins = [...candidate.customPins, design];
+    if (assignLocationId) {
+      candidate.locations = candidate.locations.map((location) =>
+        location.id === assignLocationId ? { ...location, customPinId: design.id } : location,
+      );
+    }
+    const next = normalizeCandidate(candidate, current);
+    return {
+      proposal: proposal(current, next, operation, requestedSummary, [
+        `Embed ${design.name} as a sanitized custom SVG pin.`,
+        assignLocationId ? "Assign it to one selected location." : "Add it to the project pin library without assigning it yet.",
+        removedItems ? `Remove ${removedItems} unsupported or unsafe SVG item${removedItems === 1 ? "" : "s"}.` : "No SVG elements or attributes needed removal.",
+      ]),
+      removedSvgItems: removedItems,
     };
   }
 

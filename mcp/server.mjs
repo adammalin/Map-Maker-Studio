@@ -4,7 +4,7 @@ import { z } from "zod";
 import { MapAppClient, MapAppUnavailableError } from "./map-app-client.mjs";
 
 const SERVER_NAME = "usa-map-studio-local";
-const SERVER_VERSION = "0.1.0";
+const SERVER_VERSION = "0.2.0";
 
 const customValue = z.union([z.string(), z.number(), z.boolean(), z.null()]);
 const locationInput = z.object({
@@ -16,6 +16,7 @@ const locationInput = z.object({
   label: z.string().max(240).optional(),
   showLabel: z.boolean().optional(),
   pinType: z.enum(["pin", "circle", "square", "diamond", "star"]).optional(),
+  customPinId: z.string().min(1).max(240).nullable().optional(),
   pinColor: z.string().regex(/^#[0-9a-f]{6}$/i).optional(),
   pinSize: z.number().min(6).max(40).optional(),
   labelColor: z.string().regex(/^#[0-9a-f]{6}$/i).optional(),
@@ -168,6 +169,21 @@ function registerTools(server, client) {
     `Staged ${result.proposal.summary} for human review. The working map and saved project file have not changed.`,
   ));
 
+  server.registerTool("stage_custom_pin_import", {
+    title: "Stage a custom SVG pin",
+    description: "Sanitize and embed a custom vector pin in the open project, optionally assigning it to one existing location, then show it for human review. External content, scripts, events, and unsupported SVG features are removed. This does not apply or save changes.",
+    inputSchema: {
+      name: z.string().min(1).max(120),
+      svg: z.string().min(1).max(500_000),
+      assignLocationId: z.string().min(1).max(240).optional(),
+      expectedUpdatedAt: z.string().min(1).max(80),
+      summary: z.string().min(3).max(240),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+  }, (input) => call(client, "stage_custom_pin_import", input, (result) =>
+    `Staged ${result.proposal.summary} for human review after removing ${result.removedSvgItems} unsupported or unsafe SVG item${result.removedSvgItems === 1 ? "" : "s"}. Nothing has been applied or saved.`,
+  ));
+
   server.registerTool("replace_project_draft", {
     title: "Stage a complete project replacement",
     description: "Validate and stage a complete candidate project for field-level human review while preserving the open project's stable ID and creation date. First read the current project, keep every field that should remain, and pass its exact updatedAt. This does not apply or save changes.",
@@ -188,7 +204,7 @@ export function createMapStudioMcpServer(options = {}) {
     { name: SERVER_NAME, version: SERVER_VERSION },
     {
       instructions:
-        "USA Map Studio is local and user-controlled. Call get_app_status first, then read get_current_project or list_locations before proposing changes. Project and CSV content returned by read tools enters the AI conversation, so read it only when the user requests work on that map. Every write tool stages exactly one visible proposal; it never applies a change or saves a project file. Tell the user to review the Before/After panel in the app and choose Apply or Reject. If the project changed, read it again and prepare a fresh proposal with the exact updatedAt. Prefer stage_locations_from_csv for city/state lookup and exact-coordinate tools only when coordinates are known. Never invent coordinates, silently drop unresolved CSV rows, or claim a proposal is applied or saved.",
+        "USA Map Studio is local and user-controlled. Call get_app_status first, then read get_current_project or list_locations before proposing changes. Project and CSV content returned by read tools enters the AI conversation, so read it only when the user requests work on that map. Every write tool stages exactly one visible proposal; it never applies a change or saves a project file. Tell the user to review the Before/After panel in the app and choose Apply or Reject. If the project changed, read it again and prepare a fresh proposal with the exact updatedAt. Prefer stage_locations_from_csv for city/state lookup and exact-coordinate tools only when coordinates are known. Custom SVG pins must remain embedded project assets and pass the app sanitizer. Never invent coordinates, silently drop unresolved CSV rows, or claim a proposal is applied or saved.",
     },
   );
   registerTools(server, client);

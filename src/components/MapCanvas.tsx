@@ -5,7 +5,8 @@ import type { Feature, FeatureCollection, Geometry } from "geojson";
 import statesTopologyData from "../data/us-states-2025.topo.json";
 import countiesTopologyData from "../data/us-counties-2025.topo.json";
 import { STATE_BY_FIPS } from "../data/state-metadata";
-import type { MapLocation, UsaMapProject } from "../types";
+import { customPinInnerMarkup, customPinTransform } from "../lib/custom-pin";
+import type { CustomPinDesign, MapLocation, UsaMapProject } from "../types";
 
 interface StateProperties {
   STATEFP: string;
@@ -70,8 +71,20 @@ function starPoints(radius: number): string {
   }).join(" ");
 }
 
-function PinSymbol({ location }: { location: MapLocation }) {
+function PinSymbol({ location, customPin }: { location: MapLocation; customPin?: CustomPinDesign }) {
   const size = location.pinSize;
+  if (customPin) {
+    return (
+      <g
+        className="custom-pin-symbol"
+        data-custom-pin-id={customPin.id}
+        transform={customPinTransform(customPin.viewBox, size)}
+        style={{ color: location.pinColor }}
+        pointerEvents="none"
+        dangerouslySetInnerHTML={{ __html: customPinInnerMarkup(customPin) }}
+      />
+    );
+  }
   const common = {
     fill: location.pinColor,
     stroke: "#ffffff",
@@ -119,6 +132,10 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(function MapC
     location,
     point: projection([location.longitude, location.latitude]),
   })).filter((entry): entry is { location: MapLocation; point: [number, number] } => Boolean(entry.point)), [project.locations]);
+  const customPins = useMemo(
+    () => new Map(project.customPins.map((design) => [design.id, design])),
+    [project.customPins],
+  );
 
   const groupTransform = `translate(${pan.x} ${pan.y}) translate(600 390) scale(${zoom}) translate(-600 -390)`;
 
@@ -298,7 +315,7 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(function MapC
                 {selected ? (
                   <circle r={location.pinSize * 0.82} fill="none" stroke="#fe5000" strokeWidth="2.4" strokeDasharray="4 3" vectorEffect="non-scaling-stroke" data-editor-only="true" />
                 ) : null}
-                <PinSymbol location={location} />
+                <PinSymbol location={location} customPin={location.customPinId ? customPins.get(location.customPinId) : undefined} />
                 {project.map.showLocationLabels && location.showLabel ? (
                   <text
                     x={offset.x + (offset.anchor === "start" ? location.pinSize * 0.25 : offset.anchor === "end" ? -location.pinSize * 0.25 : 0)}

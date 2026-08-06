@@ -30,6 +30,7 @@ import { parseLocationsCsv, CSV_TEMPLATE } from "./lib/csv";
 import { downloadBlob, prepareSvgMarkup, svgToPng, svgToPowerPoint } from "./lib/export";
 import { fileSafeName, parseProjectText, serializeProject } from "./lib/project";
 import { buildMcpProposal, validateProjectCandidate } from "./lib/mcp-proposals";
+import { createCustomPinDesign } from "./lib/custom-pin";
 import type { AiMapProposal, ImportResult, MapLocation, MapSettings, UsaMapProject } from "./types";
 import { MapCanvas } from "./components/MapCanvas";
 import { Inspector } from "./components/Inspector";
@@ -49,7 +50,7 @@ interface PendingImport {
 
 type ExportKind = "svg" | "png" | "pptx";
 
-const APP_VERSION = "0.1.0";
+const APP_VERSION = "0.2.0";
 
 export function App() {
   const [history, setHistory] = useState<HistoryState>({ past: [], present: createDefaultProject(), future: [] });
@@ -163,6 +164,40 @@ export function App() {
     commitProject((current) => ({ ...current, locations: current.locations.filter((location) => location.id !== selectedLocation.id) }));
     setSelectedLocationId(nextSelection);
     showNotice(`${selectedLocation.label} was removed.`);
+  }
+
+  function importCustomPin(svg: string, fileName: string) {
+    try {
+      const { design, removedItems } = createCustomPinDesign(svg, fileName);
+      const targetLocationId = selectedLocation?.id ?? null;
+      commitProject((current) => ({
+        ...current,
+        customPins: [...current.customPins, design],
+        locations: current.locations.map((location) =>
+          location.id === targetLocationId ? { ...location, customPinId: design.id } : location,
+        ),
+      }));
+      showNotice(
+        `${design.name} was embedded in the project${targetLocationId ? " and applied to the selected location" : ""}.${removedItems ? ` ${removedItems} unsupported or unsafe SVG item${removedItems === 1 ? " was" : "s were"} removed.` : ""}`,
+      );
+    } catch (error) {
+      showNotice(error instanceof Error ? error.message : "The custom SVG pin could not be imported.");
+    }
+  }
+
+  function removeCustomPin(id: string) {
+    const design = project.customPins.find((candidate) => candidate.id === id);
+    if (!design) return;
+    const usageCount = project.locations.filter((location) => location.customPinId === id).length;
+    if (!window.confirm(`Remove ${design.name} from this project? ${usageCount} location${usageCount === 1 ? "" : "s"} will return to their saved built-in pin type.`)) return;
+    commitProject((current) => ({
+      ...current,
+      customPins: current.customPins.filter((candidate) => candidate.id !== id),
+      locations: current.locations.map((location) =>
+        location.customPinId === id ? { ...location, customPinId: null } : location,
+      ),
+    }));
+    showNotice(`${design.name} was removed from the project.`);
   }
 
   async function openCsv() {
@@ -379,6 +414,7 @@ export function App() {
           proposedLocationCount: result.proposal.proposed.locations.length,
         },
         importIssues: result.importIssues ?? [],
+        removedSvgItems: result.removedSvgItems ?? 0,
         applied: false,
         saved: false,
       };
@@ -479,7 +515,7 @@ export function App() {
                 {filteredLocations.length ? filteredLocations.map((location, index) => (
                   <button key={location.id} type="button" className={`location-row${location.id === selectedLocationId ? " is-active" : ""}`} onClick={() => { setSelectedLocationId(location.id); setSelectedStateFips(null); }}>
                     <span className="location-row__marker" style={{ background: location.pinColor }}>{index + 1}</span>
-                    <span><strong>{location.label}</strong><small>{location.city}, {location.state} · {location.pinType}</small></span>
+                    <span><strong>{location.label}</strong><small>{location.city}, {location.state} · {location.customPinId ? project.customPins.find((design) => design.id === location.customPinId)?.name ?? "custom SVG" : location.pinType}</small></span>
                     {!location.showLabel ? <span className="location-row__hidden">Hidden</span> : null}
                   </button>
                 )) : (
@@ -524,11 +560,14 @@ export function App() {
                 location={selectedLocation}
                 map={project.map}
                 selectedStateFips={selectedStateFips}
+                customPins={project.customPins}
                 onUpdateLocation={(patch) => selectedLocation && updateLocation(selectedLocation.id, patch)}
                 onUpdateMap={updateMap}
                 onDuplicateLocation={duplicateSelectedLocation}
                 onRemoveLocation={removeSelectedLocation}
                 onSelectState={(fips) => { setSelectedStateFips(fips); setSelectedLocationId(null); }}
+                onImportCustomPin={importCustomPin}
+                onRemoveCustomPin={removeCustomPin}
                 onNotice={showNotice}
               />
             )}

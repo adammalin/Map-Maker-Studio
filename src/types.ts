@@ -1,8 +1,16 @@
 export const PROJECT_SCHEMA = "usa-map-studio/project";
-export const PROJECT_SCHEMA_VERSION = 1;
+export const PROJECT_SCHEMA_VERSION = 2;
 
 export type PinType = "pin" | "circle" | "square" | "diamond" | "star";
 export type LabelPosition = "right" | "left" | "above" | "below";
+
+export interface CustomPinDesign {
+  id: string;
+  name: string;
+  svg: string;
+  viewBox: string;
+  createdAt: string;
+}
 
 export interface MapLocation {
   id: string;
@@ -13,6 +21,7 @@ export interface MapLocation {
   label: string;
   showLabel: boolean;
   pinType: PinType;
+  customPinId: string | null;
   pinColor: string;
   pinSize: number;
   labelColor: string;
@@ -48,6 +57,7 @@ export interface UsaMapProject {
     updatedAt: string;
   };
   map: MapSettings;
+  customPins: CustomPinDesign[];
   locations: MapLocation[];
 }
 

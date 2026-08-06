@@ -1,8 +1,10 @@
 import { createLocation } from "../data/default-project";
 import { normalizeState } from "../data/state-metadata";
+import { sanitizeCustomPinSvg } from "./custom-pin";
 import {
   PROJECT_SCHEMA,
   PROJECT_SCHEMA_VERSION,
+  type CustomPinDesign,
   type LabelPosition,
   type MapLocation,
   type PinType,
@@ -38,13 +40,31 @@ function colorValue(value: unknown, fallback: string): string {
   return isHexColor(value) ? value.toLowerCase() : fallback;
 }
 
-function normalizeLocation(value: unknown, index: number): MapLocation {
+function normalizeCustomPin(value: unknown, index: number): CustomPinDesign {
+  if (!value || typeof value !== "object") throw new Error(`Custom pin ${index + 1} is not an object.`);
+  const input = value as Partial<CustomPinDesign>;
+  const id = stringValue(input.id).trim();
+  const name = stringValue(input.name).trim();
+  if (!id) throw new Error(`Custom pin ${index + 1} is missing an ID.`);
+  if (!name) throw new Error(`Custom pin ${index + 1} is missing a name.`);
+  const sanitized = sanitizeCustomPinSvg(stringValue(input.svg));
+  return {
+    id,
+    name: name.slice(0, 120),
+    svg: sanitized.svg,
+    viewBox: sanitized.viewBox,
+    createdAt: stringValue(input.createdAt, new Date().toISOString()),
+  };
+}
+
+function normalizeLocation(value: unknown, index: number, customPinIds: ReadonlySet<string>): MapLocation {
   if (!value || typeof value !== "object") throw new Error(`Location ${index + 1} is not an object.`);
   const input = value as Partial<MapLocation>;
   const city = stringValue(input.city).trim();
   const state = normalizeState(stringValue(input.state));
   const latitude = Number(input.latitude);
   const longitude = Number(input.longitude);
+  const customPinId = stringValue(input.customPinId).trim() || null;
   if (!city) throw new Error(`Location ${index + 1} is missing a city.`);
   if (!state) throw new Error(`Location ${index + 1} is missing a state.`);
   if (!Number.isFinite(latitude) || latitude < 15 || latitude > 75) {
@@ -52,6 +72,9 @@ function normalizeLocation(value: unknown, index: number): MapLocation {
   }
   if (!Number.isFinite(longitude) || longitude < -180 || longitude > -60) {
     throw new Error(`Location ${index + 1} has an invalid longitude.`);
+  }
+  if (customPinId && !customPinIds.has(customPinId)) {
+    throw new Error(`Location ${index + 1} references a custom pin that is not embedded in this project.`);
   }
   return createLocation({
     ...input,
@@ -63,6 +86,7 @@ function normalizeLocation(value: unknown, index: number): MapLocation {
     label: stringValue(input.label, `${city}, ${state}`),
     showLabel: typeof input.showLabel === "boolean" ? input.showLabel : true,
     pinType: PIN_TYPES.has(input.pinType as PinType) ? input.pinType as PinType : "pin",
+    customPinId,
     pinColor: colorValue(input.pinColor, "#00662c"),
     pinSize: numberWithin(input.pinSize, 16, 6, 40),
     labelColor: colorValue(input.labelColor, "#373a36"),
@@ -84,13 +108,19 @@ export function parseProjectText(text: string): UsaMapProject {
   if (!parsed || typeof parsed !== "object") throw new Error("The project file is empty.");
   const input = parsed as Partial<UsaMapProject>;
   if (input.schema !== PROJECT_SCHEMA) throw new Error("This is not a USA Map Studio project file.");
-  if (input.schemaVersion !== PROJECT_SCHEMA_VERSION) {
+  if (![1, PROJECT_SCHEMA_VERSION].includes(Number(input.schemaVersion))) {
     throw new Error(`Project schema ${String(input.schemaVersion)} is not supported by this version.`);
   }
   if (!input.project || !input.map || !Array.isArray(input.locations)) {
     throw new Error("The project file is missing required project, map, or location data.");
   }
   const now = new Date().toISOString();
+  const customPins = (Array.isArray(input.customPins) ? input.customPins : []).map(normalizeCustomPin);
+  const customPinIds = new Set<string>();
+  for (const design of customPins) {
+    if (customPinIds.has(design.id)) throw new Error(`Custom pin ID ${design.id} appears more than once.`);
+    customPinIds.add(design.id);
+  }
   return {
     schema: PROJECT_SCHEMA,
     schemaVersion: PROJECT_SCHEMA_VERSION,
@@ -118,7 +148,8 @@ export function parseProjectText(text: string): UsaMapProject {
         Object.entries(input.map.stateColors ?? {}).filter(([, color]) => isHexColor(color)),
       ),
     },
-    locations: input.locations.map(normalizeLocation),
+    customPins,
+    locations: input.locations.map((location, index) => normalizeLocation(location, index, customPinIds)),
   };
 }
 

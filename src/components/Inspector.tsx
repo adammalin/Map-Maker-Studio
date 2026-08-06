@@ -4,32 +4,63 @@ import {
   MapPin,
   PaintBrush,
   Trash,
+  UploadSimple,
 } from "@phosphor-icons/react";
+import { useRef } from "react";
+import { ORNL_SWATCH_GROUPS } from "../data/ornl-palette";
+import { customPinInnerMarkup } from "../lib/custom-pin";
 import { resolveCity } from "../lib/geocoder";
 import { STATE_BY_FIPS, STATES } from "../data/state-metadata";
-import type { MapLocation, MapSettings } from "../types";
+import type { CustomPinDesign, MapLocation, MapSettings } from "../types";
 
 interface InspectorProps {
   location: MapLocation | null;
   map: MapSettings;
   selectedStateFips: string | null;
+  customPins: CustomPinDesign[];
   onUpdateLocation(patch: Partial<MapLocation>): void;
   onUpdateMap(patch: Partial<MapSettings>): void;
   onDuplicateLocation(): void;
   onRemoveLocation(): void;
   onSelectState(fips: string | null): void;
+  onImportCustomPin(svg: string, fileName: string): void;
+  onRemoveCustomPin(id: string): void;
   onNotice(message: string): void;
 }
 
 function ColorField({ label, value, onChange }: { label: string; value: string; onChange(value: string): void }) {
   return (
-    <label className="color-field">
+    <div className="color-field">
       <span>{label}</span>
       <span className="color-field__control">
-        <input type="color" value={value} onChange={(event) => onChange(event.target.value)} />
+        <input type="color" value={value} onChange={(event) => onChange(event.target.value)} aria-label={`${label} color picker`} />
         <input value={value} onChange={(event) => onChange(event.target.value)} aria-label={`${label} hex color`} />
       </span>
-    </label>
+      <details className="brand-swatches">
+        <summary>ORNL color swatches</summary>
+        <div className="brand-swatches__groups">
+          {ORNL_SWATCH_GROUPS.map((group) => (
+            <section key={group.name}>
+              <small>{group.name}</small>
+              <div>
+                {group.colors.map((color) => (
+                  <button
+                    key={color.name}
+                    type="button"
+                    className={value.toLowerCase() === color.value ? "is-active" : ""}
+                    style={{ background: color.value }}
+                    title={`${color.name} · ${color.value.toUpperCase()}`}
+                    aria-label={`Use ${color.name} ${color.value} for ${label}`}
+                    onClick={() => onChange(color.value)}
+                  />
+                ))}
+              </div>
+            </section>
+          ))}
+          <p>Built-in draft aid. Keep accent colors subordinate and verify contrast for the final use.</p>
+        </div>
+      </details>
+    </div>
   );
 }
 
@@ -37,14 +68,22 @@ export function Inspector({
   location,
   map,
   selectedStateFips,
+  customPins,
   onUpdateLocation,
   onUpdateMap,
   onDuplicateLocation,
   onRemoveLocation,
   onSelectState,
+  onImportCustomPin,
+  onRemoveCustomPin,
   onNotice,
 }: InspectorProps) {
+  const svgInputRef = useRef<HTMLInputElement>(null);
   if (location) {
+    const selectedCustomPin = location.customPinId
+      ? customPins.find((design) => design.id === location.customPinId) ?? null
+      : null;
+    const pinTypeValue = selectedCustomPin ? `custom:${selectedCustomPin.id}` : location.pinType;
     return (
       <aside className="inspector" aria-label="Location inspector" data-testid="location-inspector">
         <div className="inspector__heading">
@@ -84,12 +123,48 @@ export function Inspector({
           <section className="form-section">
             <h3>Pin</h3>
             <label><span>Type</span>
-              <select value={location.pinType} onChange={(event) => onUpdateLocation({ pinType: event.target.value as MapLocation["pinType"] })}>
-                <option value="pin">Map pin</option><option value="circle">Circle</option><option value="square">Square</option><option value="diamond">Diamond</option><option value="star">Star</option>
+              <select value={pinTypeValue} onChange={(event) => {
+                const next = event.target.value;
+                if (next.startsWith("custom:")) onUpdateLocation({ customPinId: next.slice(7) });
+                else onUpdateLocation({ pinType: next as MapLocation["pinType"], customPinId: null });
+              }}>
+                <optgroup label="Built-in pins">
+                  <option value="pin">Map pin</option><option value="circle">Circle</option><option value="square">Square</option><option value="diamond">Diamond</option><option value="star">Star</option>
+                </optgroup>
+                {customPins.length ? (
+                  <optgroup label="Custom SVG pins">
+                    {customPins.map((design) => <option key={design.id} value={`custom:${design.id}`}>{design.name}</option>)}
+                  </optgroup>
+                ) : null}
               </select>
             </label>
             <ColorField label="Color" value={location.pinColor} onChange={(pinColor) => onUpdateLocation({ pinColor })} />
             <label><span>Size <em>{location.pinSize}px</em></span><input type="range" min="6" max="40" value={location.pinSize} onChange={(event) => onUpdateLocation({ pinSize: Number(event.target.value) })} /></label>
+            <input
+              ref={svgInputRef}
+              className="sr-only"
+              type="file"
+              accept=".svg,image/svg+xml"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) void file.text().then((svg) => onImportCustomPin(svg, file.name));
+                event.currentTarget.value = "";
+              }}
+            />
+            <button type="button" className="button button--secondary button--full" onClick={() => svgInputRef.current?.click()}>
+              <UploadSimple size={16} /> Import custom SVG pin
+            </button>
+            {selectedCustomPin ? (
+              <section className="custom-pin-card">
+                <svg viewBox={selectedCustomPin.viewBox} role="img" aria-label={`${selectedCustomPin.name} custom pin preview`} style={{ color: location.pinColor }}>
+                  <g dangerouslySetInnerHTML={{ __html: customPinInnerMarkup(selectedCustomPin) }} />
+                </svg>
+                <span><strong>{selectedCustomPin.name}</strong><small>Embedded in project JSON</small></span>
+                <button type="button" onClick={() => onRemoveCustomPin(selectedCustomPin.id)} aria-label={`Remove ${selectedCustomPin.name}`}><Trash size={15} /></button>
+              </section>
+            ) : (
+              <p className="form-hint">Imported SVGs are sanitized, embedded in the project, and available to every location. Shapes using <code>currentColor</code> follow the selected pin color.</p>
+            )}
           </section>
           <section className="form-section">
             <h3>Label</h3>

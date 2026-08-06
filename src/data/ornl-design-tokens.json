@@ -1,0 +1,32 @@
+{
+  "color": {
+    "primary": {
+      "ornl-green": { "$type": "color", "$value": "#00662C" },
+      "hale-navy": { "$type": "color", "$value": "#00454D" },
+      "graphite": { "$type": "color", "$value": "#DBDCDB" },
+      "polar": { "$type": "color", "$value": "#FFFFFF" },
+      "dark-matter": { "$type": "color", "$value": "#373A36" }
+    },
+    "secondary": {
+      "energy": { "$type": "color", "$value": "#7DBA00" },
+      "mist": { "$type": "color", "$value": "#8BFEBF" },
+      "biome": { "$type": "color", "$value": "#00B38F" },
+      "aqua": { "$type": "color", "$value": "#00BDB5" },
+      "infinity": { "$type": "color", "$value": "#006BA6" },
+      "hydro": { "$type": "color", "$value": "#005776" }
+    },
+    "accent": {
+      "forge": { "$type": "color", "$value": "#FF9E1B" },
+      "spark": { "$type": "color", "$value": "#FE5000" },
+      "plasma": { "$type": "color", "$value": "#B50094" },
+      "pulsar": { "$type": "color", "$value": "#4E008E" }
+    }
+  },
+  "dimension": {
+    "radius": { "$type": "dimension", "$value": { "value": 0, "unit": "px" } }
+  },
+  "fontFamily": {
+    "general": { "$type": "fontFamily", "$value": ["Mulish", "Aptos", "Arial", "sans-serif"] },
+    "office": { "$type": "fontFamily", "$value": ["Aptos", "Arial", "sans-serif"] }
+  }
+}

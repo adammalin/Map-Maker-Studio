@@ -11,6 +11,7 @@ The MCP server lets a local AI client inspect the project currently open in USA 
 - Write tools stage one proposal. They do not apply it or write a project file.
 - The app compares the proposal's `expectedUpdatedAt` value before staging and again before Apply.
 - Removing locations and replacing a project are flagged as destructive to MCP clients, even though they still stop at human review.
+- `stage_custom_pin_import` sanitizes and embeds the submitted SVG before the proposal is shown. It can optionally assign the new design to one existing location, but still cannot apply or save the result.
 
 When a read tool returns project or CSV-derived content, that returned content becomes part of the AI conversation. Do not use an AI client with material that is not approved for that client.
 
@@ -58,4 +59,4 @@ The runtime descriptor exists only while the desktop app is open. Never copy its
 5. Tell the user the proposal is waiting in USA Map Studio and has not been applied or saved.
 6. Wait for the user to apply or reject it before preparing another proposal.
 
-For city/state lists, prefer `stage_locations_from_csv`; it uses the same bundled 2025 Census place index as the app and returns unresolved rows explicitly. Use `stage_locations_add` only when exact coordinates are known.
+For city/state lists, prefer `stage_locations_from_csv`; it uses the same bundled 2025 Census place index as the app and returns unresolved rows explicitly. Use `stage_locations_add` only when exact coordinates are known. Use `stage_custom_pin_import` for SVG artwork: provide a name, the complete SVG string, and optionally `assignLocationId`. Designs that use `currentColor` inherit the selected location's pin color after the proposal is applied.

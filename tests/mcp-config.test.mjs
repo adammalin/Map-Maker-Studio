@@ -34,6 +34,7 @@ test("MCP configuration install is idempotent and preserves unrelated Codex sett
   assert.match(source, /\[mcp_servers\.usa_map_studio\]/);
   assert.match(source, /default_tools_approval_mode = "writes"/);
   assert.match(source, /replace_project_draft/);
+  assert.match(source, /stage_custom_pin_import/);
   assert.equal(inspectMapMcpConfiguration({ configPath }).installed, true);
   fs.rmSync(directory, { recursive: true, force: true });
 });

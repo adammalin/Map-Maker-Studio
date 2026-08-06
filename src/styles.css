@@ -70,6 +70,8 @@ button:disabled {
 
 .sr-only {
   position: absolute;
+  top: 0;
+  left: 0;
   width: 1px;
   height: 1px;
   padding: 0;
@@ -78,6 +80,10 @@ button:disabled {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
+}
+
+input.sr-only[type="file"] {
+  display: none;
 }
 
 .studio-shell {
@@ -1059,6 +1065,125 @@ button:disabled {
   border: 1px solid #b8c5c1;
   background: var(--white);
   padding: 3px;
+}
+
+.brand-swatches {
+  border: 1px solid #cbd5d2;
+  background: var(--surface-muted);
+  text-transform: none;
+}
+
+.brand-swatches summary {
+  color: var(--navy);
+  padding: 7px 9px;
+  font-size: 8.5px;
+  font-weight: 850;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+}
+
+.brand-swatches__groups {
+  display: grid;
+  gap: 9px;
+  border-top: 1px solid #cbd5d2;
+  background: var(--white);
+  padding: 9px;
+}
+
+.brand-swatches__groups section {
+  display: grid;
+  gap: 5px;
+}
+
+.brand-swatches__groups section > small {
+  color: #61716f;
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.brand-swatches__groups section > div {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 4px;
+}
+
+.brand-swatches__groups button {
+  width: 100%;
+  aspect-ratio: 1;
+  border: 1px solid #9caaa7;
+  padding: 0;
+}
+
+.brand-swatches__groups button:hover,
+.brand-swatches__groups button.is-active {
+  outline: 2px solid var(--forge);
+  outline-offset: 1px;
+}
+
+.brand-swatches__groups p {
+  margin: 0;
+  color: #687875;
+  font-size: 7.5px;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.custom-pin-card {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr) 30px;
+  align-items: center;
+  gap: 9px;
+  border-left: 5px solid var(--green);
+  background: var(--surface-green);
+  padding: 8px;
+}
+
+.custom-pin-card svg {
+  width: 42px;
+  height: 42px;
+  overflow: visible;
+}
+
+.custom-pin-card > span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.custom-pin-card strong,
+.custom-pin-card small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.custom-pin-card strong {
+  color: var(--navy);
+  font-size: 9px;
+}
+
+.custom-pin-card small {
+  color: #61716f;
+  font-size: 7.5px;
+}
+
+.custom-pin-card button {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 1px solid #efad9a;
+  background: var(--white);
+  color: #a23213;
+  padding: 0;
+}
+
+.form-hint code {
+  color: var(--navy);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 0.95em;
 }
 
 .form-hint {

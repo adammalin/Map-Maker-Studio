@@ -240,6 +240,15 @@ async function runSmoke(window) {
       statePaths: document.querySelectorAll('.map-state').length,
       width: Math.round(svgBounds?.width || 0),
       height: Math.round(svgBounds?.height || 0),
+      documentClientWidth: document.documentElement.clientWidth,
+      documentScrollWidth: document.documentElement.scrollWidth,
+      overflowElements: [...document.querySelectorAll('body *')]
+        .filter((element) => {
+          const bounds = element.getBoundingClientRect();
+          return bounds.right > document.documentElement.clientWidth + 0.5 || bounds.left < -0.5;
+        })
+        .slice(0, 8)
+        .map((element) => ({ tag: element.tagName, className: element.className, right: Math.round(element.getBoundingClientRect().right) })),
       documentOverflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth,
       documentOverflowY: document.documentElement.scrollHeight > document.documentElement.clientHeight,
     };
@@ -286,11 +295,6 @@ async function runSmoke(window) {
   result.mcpProposalStaged = staged.ok && stagedBody?.result?.applied === false &&
     stagedBody?.result?.saved === false && reviewState.banner && reviewState.dialog &&
     reviewState.countiesBeforeApply === "false";
-  if (capturePath) {
-    const image = await window.webContents.capturePage();
-    await fs.mkdir(path.dirname(capturePath), { recursive: true });
-    await fs.writeFile(capturePath, image.toPNG());
-  }
   await window.webContents.executeJavaScript(`(() => {
     const apply = [...document.querySelectorAll('.ai-proposal-actions button')]
       .find((button) => button.textContent?.includes('Apply to working map'));
@@ -304,15 +308,122 @@ async function runSmoke(window) {
   }))()`);
   result.mcpProposalAppliedByUser = appliedState.proposalGone &&
     appliedState.countiesAfterApply === "true" && appliedState.dirty === "Unsaved";
+  const currentResponse = await fetch(new URL("command", mcpAddress), {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-usa-map-studio-token": mcpToken,
+    },
+    body: JSON.stringify({ operation: "get_current_project", input: {} }),
+  });
+  const currentBody = await currentResponse.json();
+  const currentProject = currentBody?.result?.project;
+  const customStage = await fetch(new URL("command", mcpAddress), {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-usa-map-studio-token": mcpToken,
+    },
+    body: JSON.stringify({
+      operation: "stage_custom_pin_import",
+      input: {
+        name: "Smoke-test triangle",
+        svg: '<svg viewBox="0 0 24 24" onload="bad()"><script>bad()</script><path d="M12 1L23 23H1Z" fill="currentColor"/></svg>',
+        assignLocationId: currentProject?.locations?.[0]?.id,
+        expectedUpdatedAt: currentProject?.project?.updatedAt,
+        summary: "Smoke-test embedded custom pin",
+      },
+    }),
+  });
+  const customStageBody = await customStage.json();
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  const customReviewState = await window.webContents.executeJavaScript(`(() => ({
+    dialog: Boolean(document.querySelector('[data-testid="ai-proposal-dialog"]')),
+    customPinsBeforeApply: document.querySelectorAll('.custom-pin-symbol').length,
+    paletteFields: document.querySelectorAll('.brand-swatches').length,
+    firstPaletteSwatches: document.querySelector('.brand-swatches')?.querySelectorAll('button').length || 0,
+  }))()`);
+  result.customPinProposalStaged = customStage.ok && customStageBody?.result?.applied === false &&
+    customStageBody?.result?.removedSvgItems === 2 && customReviewState.dialog &&
+    customReviewState.customPinsBeforeApply === 0;
+  result.ornlPaletteAvailable = customReviewState.paletteFields >= 2 && customReviewState.firstPaletteSwatches === 15;
+  await window.webContents.executeJavaScript(`(() => {
+    const apply = [...document.querySelectorAll('.ai-proposal-actions button')]
+      .find((button) => button.textContent?.includes('Apply to working map'));
+    apply?.click();
+  })()`);
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  const customAppliedState = await window.webContents.executeJavaScript(`(async () => {
+    const map = document.querySelector('[data-testid="map-svg"]');
+    const clone = map?.cloneNode(true);
+    clone?.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    clone?.setAttribute('width', '1200');
+    clone?.setAttribute('height', '720');
+    clone?.querySelectorAll('[data-editor-only]').forEach((element) => element.remove());
+    const exportMarkup = clone ? new XMLSerializer().serializeToString(clone) : '';
+    let rasterized = false;
+    if (exportMarkup) {
+      const url = URL.createObjectURL(new Blob([exportMarkup], { type: 'image/svg+xml' }));
+      try {
+        const image = new Image();
+        await new Promise((resolve, reject) => {
+          image.onload = resolve;
+          image.onerror = reject;
+          image.src = url;
+        });
+        const canvas = document.createElement('canvas');
+        canvas.width = 1200;
+        canvas.height = 720;
+        const context = canvas.getContext('2d');
+        context?.drawImage(image, 0, 0, 1200, 720);
+        rasterized = Boolean(context);
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    }
+    return {
+      proposalGone: !document.querySelector('[data-testid="ai-proposal-banner"]'),
+      customPin: Boolean(document.querySelector('.custom-pin-symbol path')),
+      exportMarkupIncludesCustomPin: /custom-pin-symbol/.test(exportMarkup) && /currentColor/.test(exportMarkup),
+      customPinRasterized: rasterized,
+    };
+  })()`);
+  const finalProjectResponse = await fetch(new URL("command", mcpAddress), {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-usa-map-studio-token": mcpToken,
+    },
+    body: JSON.stringify({ operation: "get_current_project", input: {} }),
+  });
+  const finalProjectBody = await finalProjectResponse.json();
+  const embeddedDesign = finalProjectBody?.result?.project?.customPins?.[0];
+  result.customPinEmbedded = customAppliedState.proposalGone && customAppliedState.customPin &&
+    finalProjectBody?.result?.project?.schemaVersion === 2 &&
+    finalProjectBody?.result?.project?.locations?.[0]?.customPinId === embeddedDesign?.id &&
+    typeof embeddedDesign?.svg === "string" && embeddedDesign.svg.includes("currentColor") &&
+    !/script|onload/i.test(embeddedDesign.svg);
+  result.customPinExports = customAppliedState.exportMarkupIncludesCustomPin && customAppliedState.customPinRasterized;
+  if (capturePath) {
+    await window.webContents.executeJavaScript(`(() => {
+      const palette = document.querySelector('.brand-swatches');
+      if (palette) palette.open = true;
+    })()`);
+    await new Promise((resolve) => setTimeout(resolve, 180));
+    const image = await window.webContents.capturePage();
+    await fs.mkdir(path.dirname(capturePath), { recursive: true });
+    await fs.writeFile(capturePath, image.toPNG());
+  }
   const passed = result.shell && result.map && result.stage && result.list &&
     result.locationRows >= 8 && result.statePaths === 51 &&
     result.width > 400 && result.height > 240 &&
     !result.documentOverflowX && !result.documentOverflowY &&
     result.mcpBridge && result.mcpUnauthorizedBlocked && result.mcpLoopback &&
-    result.mcpProposalStaged && result.mcpProposalAppliedByUser;
+    result.mcpProposalStaged && result.mcpProposalAppliedByUser &&
+    result.customPinProposalStaged && result.customPinEmbedded && result.customPinExports &&
+    result.ornlPaletteAvailable;
   console.log(`USA_MAP_STUDIO_SMOKE ${JSON.stringify({ passed, ...result })}`);
-  if (!passed) process.exitCode = 1;
-  app.quit();
+  app.exit(passed ? 0 : 1);
 }
 
 async function createWindow() {
