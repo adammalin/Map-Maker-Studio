@@ -670,6 +670,16 @@ async function runSmoke(window) {
     apply?.click();
   })()`);
   await new Promise((resolve) => setTimeout(resolve, 120));
+  const pinSizeChanged = await window.webContents.executeJavaScript(`(() => {
+    const slider = document.querySelector('[data-testid="location-inspector"] input[type="range"]');
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    if (!slider || !setter) return false;
+    setter.call(slider, '29');
+    slider.dispatchEvent(new Event('input', { bubbles: true }));
+    slider.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  })()`);
+  await new Promise((resolve) => setTimeout(resolve, 120));
   const customAppliedState = await window.webContents.executeJavaScript(`(async () => {
     const map = document.querySelector('[data-testid="map-svg"]');
     const clone = map?.cloneNode(true);
@@ -710,6 +720,9 @@ async function runSmoke(window) {
       exportMarkupUsesLayeredLabels: /data-label-halo="true"/.test(exportMarkup) &&
         /data-label-text="true"/.test(exportMarkup) && !/paint-order/i.test(exportMarkup),
       exportLayerGroups: (exportMarkup.match(/data-map-layer="true"/g) || []).length,
+      effectivePinSizes: [...new Set([...document.querySelectorAll('.map-location')]
+        .map((location) => location.getAttribute('data-effective-pin-size')))],
+      exportedPinSizeCount: (exportMarkup.match(/data-effective-pin-size="29"/g) || []).length,
       customPinRasterized: rasterized,
       deleteButtonWidth: document.querySelector('.custom-pin-card__delete')?.getBoundingClientRect().width || 0,
       deleteIconWidth: document.querySelector('.custom-pin-card__delete svg')?.getBoundingClientRect().width || 0,
@@ -735,6 +748,11 @@ async function runSmoke(window) {
     !/script|onload/i.test(embeddedDesign.svg);
   result.customPinAppliedToAll = customAppliedState.customPinCount === currentProject.locations.length &&
     customAppliedState.scopedGradientCount === currentProject.locations.length;
+  result.pinSizeExportFidelity = pinSizeChanged && customAppliedState.effectivePinSizes.length === 1 &&
+    customAppliedState.effectivePinSizes[0] === "29" &&
+    customAppliedState.exportedPinSizeCount >= currentProject.locations.length &&
+    finalProjectBody?.result?.project?.sharedPinStyle?.pinSize === 29 &&
+    finalProjectBody?.result?.project?.locations?.every((location) => location.pinSize === 29);
   result.customPinDeleteControl = customAppliedState.deleteButtonWidth === 30 && customAppliedState.deleteIconWidth === 15;
   result.customPinExportMarkup = customAppliedState.exportMarkupIncludesCustomPin;
   result.customPinExportGradientReference = customAppliedState.exportGradientReference;
@@ -771,7 +789,7 @@ async function runSmoke(window) {
     saveStatus: document.querySelector('.save-status')?.textContent,
     pendingProposal: Boolean(document.querySelector('[data-testid="ai-proposal-banner"]')),
   }))()`);
-  result.autosaveRestoredOnLaunch = autosaveRestoredState.version === "v0.5.0" &&
+  result.autosaveRestoredOnLaunch = autosaveRestoredState.version === "v0.5.1" &&
     autosaveRestoredState.locationCount === String(currentProject.locations.length) &&
     autosaveRestoredState.layerCount === "2" &&
     autosaveRestoredState.customPinCount === currentProject.locations.length &&
@@ -798,7 +816,7 @@ async function runSmoke(window) {
     result.mcpBridge && result.mcpUnauthorizedBlocked && result.mcpLoopback &&
     result.canvasNavigation && result.workspaceModesFunctional && result.layerWorkspaceFunctional && result.pinEditingScope && result.locationVisibility && result.locationRowDelete && result.mcpProposalStaged && result.mcpProposalAppliedByUser &&
     result.customPinProposalStaged && result.customPinEmbedded && result.customPinAppliedToAll &&
-    result.customPinDeleteControl && result.customPinExports && result.exportLayerGroups === 2 && result.svgLabelExportLayered &&
+    result.customPinDeleteControl && result.customPinExports && result.pinSizeExportFidelity && result.exportLayerGroups === 2 && result.svgLabelExportLayered &&
     result.ornlPaletteAvailable && result.jsonAutosave && result.autosaveRestoredOnLaunch;
   console.log(`USA_MAP_STUDIO_SMOKE ${JSON.stringify({ passed, ...result })}`);
   app.exit(passed ? 0 : 1);

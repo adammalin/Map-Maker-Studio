@@ -44,6 +44,7 @@ function PinSymbol({ location, style, customPin }: { location: MapLocation; styl
       <g
         className="custom-pin-symbol"
         data-custom-pin-id={customPin.id}
+        data-effective-pin-size={size}
         transform={customPinTransform(customPin.viewBox, size)}
         style={{ color: style.pinColor }}
         pointerEvents="none"
@@ -335,6 +336,8 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(function MapC
                 transform={`translate(${x} ${y})`}
                 role="button"
                 data-layer-id={layer.id}
+                data-effective-pin-size={style.pinSize}
+                data-effective-pin-type={style.customPinId ? "custom" : style.pinType}
                 aria-label={`${location.label} in ${layer.name} at ${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}`}
                 onClick={(event) => {
                   event.stopPropagation();

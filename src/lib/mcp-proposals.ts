@@ -2,6 +2,7 @@ import { parseLocationsCsv } from "./csv";
 import { parseProjectText } from "./project";
 import { createCustomPinDesign } from "./custom-pin";
 import { createMapLayer } from "../data/default-project";
+import { applySharedPinStylePatch } from "./layers";
 import type { AiMapProposal, MapLayer, MapLocation, MapSettings, SharedPinStyle, UsaMapProject } from "../types";
 
 export interface ProposalBuildResult {
@@ -314,8 +315,7 @@ export function buildMcpProposal(
 
   if (operation === "stage_shared_pin_style_update") {
     const patch = knownPatch<SharedPinStyle>(input.patch, SHARED_PIN_STYLE_KEYS, "Shared pin style patch");
-    const candidate = structuredClone(current);
-    candidate.sharedPinStyle = { ...candidate.sharedPinStyle, ...patch };
+    const candidate = applySharedPinStylePatch(structuredClone(current), patch);
     const next = normalizeCandidate(candidate, current);
     return {
       proposal: proposal(current, next, operation, requestedSummary, [

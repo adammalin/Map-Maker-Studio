@@ -5,6 +5,7 @@ import { buildMcpProposal } from "../src/lib/mcp-proposals";
 
 test("MCP location changes stage a proposal without mutating the working project", () => {
   const current = createDefaultProject();
+  current.sharedPinStyle.enabled = false;
   const originalLabel = current.locations[0].label;
   const result = buildMcpProposal("stage_location_update", {
     locationId: current.locations[0].id,
@@ -91,6 +92,7 @@ test("MCP removal proposals preserve the working list until review", () => {
 
 test("MCP custom SVG import stages a sanitized embedded design", () => {
   const current = createDefaultProject();
+  current.sharedPinStyle.enabled = false;
   const result = buildMcpProposal("stage_custom_pin_import", {
     name: "AI marker",
     svg: '<svg viewBox="0 0 20 20" onload="bad()"><circle cx="10" cy="10" r="9" fill="currentColor"/></svg>',
@@ -184,4 +186,6 @@ test("MCP shared pin style guarantees one effective style across layers", () => 
     pinColor: "#ffb000",
     pinSize: 14,
   });
+  assert.ok(result.proposal.proposed.locations.every((location) => location.pinSize === 14));
+  assert.ok(result.proposal.proposed.locations.every((location) => location.pinColor === "#ffb000"));
 });

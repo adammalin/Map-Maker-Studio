@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createDefaultProject } from "../src/data/default-project";
-import { effectivePinStyle, setPinEditingScope } from "../src/lib/layers";
+import {
+  applySharedPinStylePatch,
+  effectivePinStyle,
+  materializeEffectivePinStyles,
+  setPinEditingScope,
+} from "../src/lib/layers";
 
 test("new projects default to editing one shared style across all pins", () => {
   const project = createDefaultProject();
@@ -38,4 +43,26 @@ test("switching back to all-pins editing uses the selected pin as the shared sty
     pinColor: "#006ba6",
     pinSize: 19,
   });
+});
+
+test("shared pin edits immediately mirror the visible size into every location", () => {
+  const project = createDefaultProject();
+  project.locations.forEach((location) => { location.pinSize = 8; });
+
+  const updated = applySharedPinStylePatch(project, { pinSize: 27 });
+
+  assert.equal(updated.sharedPinStyle.pinSize, 27);
+  assert.ok(updated.locations.every((location) => location.pinSize === 27));
+  assert.ok(project.locations.every((location) => location.pinSize === 8), "the source project is not mutated");
+});
+
+test("export snapshots materialize effective shared styles without mutating the project", () => {
+  const project = createDefaultProject();
+  project.sharedPinStyle.pinSize = 31;
+  project.locations.forEach((location) => { location.pinSize = 8; });
+
+  const snapshot = materializeEffectivePinStyles(project);
+
+  assert.ok(snapshot.locations.every((location) => location.pinSize === 31));
+  assert.ok(project.locations.every((location) => location.pinSize === 8));
 });

@@ -35,7 +35,13 @@ import { downloadBlob, prepareSvgMarkup, projectToPowerPoint, svgToPng } from ".
 import { fileSafeName, parseProjectText, serializeProject } from "./lib/project";
 import { buildMcpProposal, validateProjectCandidate } from "./lib/mcp-proposals";
 import { createCustomPinDesign } from "./lib/custom-pin";
-import { effectivePinStyle, layerName, setPinEditingScope as applyPinEditingScope } from "./lib/layers";
+import {
+  applySharedPinStylePatch,
+  effectivePinStyle,
+  layerName,
+  materializeEffectivePinStyles,
+  setPinEditingScope as applyPinEditingScope,
+} from "./lib/layers";
 import type { AiMapProposal, ImportResult, MapLayer, MapLocation, MapSettings, SharedPinStyle, UsaMapProject } from "./types";
 import { MapCanvas } from "./components/MapCanvas";
 import { MapMiniMap } from "./components/MapMiniMap";
@@ -68,7 +74,7 @@ const WORKSPACE_MODE_COPY: Record<WorkspaceMode, { title: string; description: s
   export: { title: "Export preview", description: "Review the composition and choose an output format" },
 };
 
-const APP_VERSION = "0.5.0";
+const APP_VERSION = "0.5.1";
 
 export function App() {
   const [history, setHistory] = useState<HistoryState>({ past: [], present: createDefaultProject(), future: [] });
@@ -178,10 +184,7 @@ export function App() {
       setPinEditingScope(patch.enabled ? "all" : "single");
       return;
     }
-    commitProject((current) => ({
-      ...current,
-      sharedPinStyle: { ...current.sharedPinStyle, ...patch },
-    }));
+    commitProject((current) => applySharedPinStylePatch(current, patch));
   }
 
   function setPinEditingScope(scope: "all" | "single") {
@@ -398,7 +401,8 @@ export function App() {
     setExporting(kind);
     try {
       const svg = prepareSvgMarkup(svgRef.current);
-      const stem = fileSafeName(project.project.name);
+      const exportProject = materializeEffectivePinStyles(project);
+      const stem = fileSafeName(exportProject.project.name);
       if (kind === "svg") {
         const defaultName = `${stem}.svg`;
         if (window.usaMapDesktop) {
@@ -411,7 +415,7 @@ export function App() {
       } else {
         const bytes = kind === "png"
           ? await svgToPng(svg, 2)
-          : await projectToPowerPoint(project, { zoom, pan });
+          : await projectToPowerPoint(exportProject, { zoom, pan });
         const defaultName = `${stem}.${kind}`;
         if (window.usaMapDesktop) {
           const result = await window.usaMapDesktop.saveBinaryFile({ kind, defaultName, bytes });
@@ -883,7 +887,7 @@ export function App() {
                   <p className="export-intro">Every export uses the same 1200 × 720 composition currently visible on the canvas.</p>
                   <button type="button" className="export-option" onClick={() => void exportMap("svg")} disabled={exporting !== null}><BracketsCurly size={24} /><span><strong>SVG</strong><small>Scalable vector map for design tools and the web</small></span></button>
                   <button type="button" className="export-option" onClick={() => void exportMap("png")} disabled={exporting !== null}><ImageSquare size={24} /><span><strong>PNG</strong><small>2400 × 1440 transparent-safe raster image</small></span></button>
-                  <button type="button" className="export-option" onClick={() => void exportMap("pptx")} disabled={exporting !== null}><PresentationChart size={24} /><span><strong>PowerPoint</strong><small>Editable states, labels, standard pins, and legend</small></span></button>
+                  <button type="button" className="export-option" onClick={() => void exportMap("pptx")} disabled={exporting !== null}><PresentationChart size={24} /><span><strong>PowerPoint</strong><small>Editable map objects with the visible pin size and viewport</small></span></button>
                   <button type="button" className="export-option" onClick={() => void saveProject()}><FloppyDisk size={24} /><span><strong>Project JSON</strong><small>Complete editable project for later import</small></span></button>
                   <section className="export-note"><CheckCircle size={18} weight="fill" /><span><strong>Consistent output</strong>Selection outlines and editor controls are excluded from exported files.</span></section>
                 </div>

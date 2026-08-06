@@ -19,12 +19,12 @@ USA Map Studio is a local-first Electron desktop editor for building accurate ma
 - Select a state for a fill override and drag pins without Space held to refine coordinates.
 - Save and reopen a versioned `.usmap.json` project containing the complete map configuration, ordered layers, layer/location visibility, shared style, and every location.
 - Autosave every project-changing action. After a project is opened or saved, the same `.usmap.json` file is updated atomically; until a user-selected path exists, the app maintains an internal JSON recovery file and restores it on launch.
-- Export a scalable SVG, a 2400 x 1440 PNG, or a one-slide 16:9 PowerPoint whose states, boundary layers, text, standard pins, and legend are separate editable objects. SVG uses named layer groups; visible PowerPoint location objects are prefixed with their layer name in the Selection Pane. Imported custom SVG pins remain separate movable vector objects.
+- Export the exact visible composition, including the effective All pins/This pin size and the current zoom/pan viewport, as a scalable SVG, a 2400 x 1440 PNG, or a one-slide 16:9 PowerPoint. PowerPoint states, boundary layers, text, standard pins, and legend remain separate editable objects; custom SVG pins remain separate movable vector objects and preserve their source aspect ratio. SVG uses named layer groups, and visible PowerPoint location objects are prefixed with their layer name in the Selection Pane.
 - Let ChatGPT desktop, Codex, or another local MCP client inspect the open project and stage visible map-change proposals for human review.
 
 The interface deliberately follows the clear hierarchy and square-edged desktop design language of OrgChart Studio while remaining a separate product.
 
-Current application version: **0.5.0**.
+Current application version: **0.5.1**.
 
 ## Documentation
 
@@ -63,7 +63,7 @@ powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ".\scripts\setup
 
 For later launches, double-click `Start-USA-Map-Studio.cmd` or run `scripts\start-windows.ps1` from PowerShell.
 
-The setup scripts install exact dependency versions, build the renderer, and run a hidden Electron smoke test. They do not create DMG, PKG, MSI, EXE, or Squirrel installers and do not disable operating-system security controls.
+The setup scripts first check `origin/main` and safely fast-forward a clean `main` checkout, then install exact dependency versions, build the renderer, and run a hidden Electron smoke test. This makes rerunning setup an update-and-rebuild workflow instead of rebuilding an old clone. Local changes are never overwritten: update is skipped when the checkout is dirty or on another branch. Set `USA_MAP_SETUP_UPDATE=skip` before setup when deliberately building the source already on disk. The scripts do not create DMG, PKG, MSI, EXE, or Squirrel installers and do not disable operating-system security controls.
 
 By default, setup also registers the `usa_map_studio` STDIO MCP server in the shared ChatGPT desktop/Codex configuration at `~/.codex/config.toml` (or its Windows equivalent). Set `USA_MAP_SETUP_MCP=skip` before running setup to skip that optional step.
 

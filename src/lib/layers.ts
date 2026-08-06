@@ -58,6 +58,49 @@ export function sharedPinStyleFromLocation(location?: MapLocation): SharedPinSty
   };
 }
 
+function locationWithPinStyle(location: MapLocation, style: EffectivePinStyle): MapLocation {
+  return {
+    ...location,
+    pinType: style.pinType,
+    customPinId: style.customPinId,
+    pinColor: style.pinColor,
+    pinSize: style.pinSize,
+  };
+}
+
+/**
+ * Applies a shared-style edit and mirrors the visible result into every
+ * location. The shared style remains the editing contract, while the mirrored
+ * values keep project JSON and every export consumer in sync with the canvas.
+ */
+export function applySharedPinStylePatch(
+  project: UsaMapProject,
+  patch: Partial<SharedPinStyle>,
+): UsaMapProject {
+  const sharedPinStyle = { ...project.sharedPinStyle, ...patch };
+  const leavingSharedMode = project.sharedPinStyle.enabled && sharedPinStyle.enabled === false;
+  if (!sharedPinStyle.enabled && !leavingSharedMode) {
+    return { ...project, sharedPinStyle };
+  }
+  return {
+    ...project,
+    sharedPinStyle,
+    locations: project.locations.map((location) => locationWithPinStyle(location, sharedPinStyle)),
+  };
+}
+
+/**
+ * Produces an immutable export/save snapshot whose per-location pin fields are
+ * exactly the effective styles rendered on the canvas.
+ */
+export function materializeEffectivePinStyles(project: UsaMapProject): UsaMapProject {
+  return {
+    ...project,
+    sharedPinStyle: { ...project.sharedPinStyle },
+    locations: project.locations.map((location) => locationWithPinStyle(location, effectivePinStyle(project, location))),
+  };
+}
+
 export type PinEditingScope = "all" | "single";
 
 export function setPinEditingScope(
@@ -71,13 +114,7 @@ export function setPinEditingScope(
     return {
       ...project,
       sharedPinStyle: { ...style, enabled: false },
-      locations: project.locations.map((location) => ({
-        ...location,
-        pinType: style.pinType,
-        customPinId: style.customPinId,
-        pinColor: style.pinColor,
-        pinSize: style.pinSize,
-      })),
+      locations: project.locations.map((location) => locationWithPinStyle(location, style)),
     };
   }
 

@@ -22,6 +22,47 @@ Write-Host "This installs exact local dependencies, builds the Electron app, and
 Write-Host "a hidden smoke check. It does not install a signed package or make system-wide changes."
 Write-Host ""
 
+function Update-ProjectSource {
+  if ($env:USA_MAP_SETUP_UPDATE -eq "skip") {
+    Write-Host "Automatic source update skipped by USA_MAP_SETUP_UPDATE=skip."
+    return
+  }
+
+  $git = Get-Command git.exe -ErrorAction SilentlyContinue
+  if (-not $git) {
+    Write-Host "No Git executable detected; building the source currently on disk."
+    return
+  }
+
+  & $git.Source -C $ProjectRoot rev-parse --is-inside-work-tree *> $null
+  if ($LASTEXITCODE -ne 0) {
+    Write-Host "No Git checkout detected; building the source currently on disk."
+    return
+  }
+
+  $currentBranch = (& $git.Source -C $ProjectRoot branch --show-current).Trim()
+  if ($currentBranch -ne "main") {
+    $branchLabel = if ($currentBranch) { $currentBranch } else { "detached HEAD" }
+    Write-Host "Source update skipped on branch '$branchLabel'."
+    return
+  }
+
+  $checkoutChanges = & $git.Source -C $ProjectRoot status --porcelain
+  if ($checkoutChanges) {
+    Write-Warning "Source update skipped because this checkout has local changes. Commit, stash, or remove them before using setup as an updater."
+    return
+  }
+
+  Write-Host "Checking origin/main for a newer USA Map Studio version..."
+  & $git.Source -C $ProjectRoot pull --ff-only origin main
+  if ($LASTEXITCODE -ne 0) {
+    throw "The checkout could not be updated with a safe fast-forward. No local files were overwritten."
+  }
+  $sourceVersion = & $git.Source -C $ProjectRoot log -1 --oneline
+  Write-Host "Source version: $sourceVersion"
+  Write-Host ""
+}
+
 function Test-NodeRuntime {
   param([string]$NodeExecutable, [string]$NpmExecutable)
   if (-not (Test-Path -LiteralPath $NodeExecutable -PathType Leaf) -or
@@ -80,6 +121,8 @@ function Install-PortableNode {
   }
   return @{ Node = $nodeExecutable; Npm = $npmExecutable }
 }
+
+Update-ProjectSource
 
 $systemNode = Get-Command node.exe -ErrorAction SilentlyContinue
 $systemNpm = Get-Command npm.cmd -ErrorAction SilentlyContinue

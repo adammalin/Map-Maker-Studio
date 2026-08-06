@@ -17,6 +17,41 @@ print "a hidden smoke check. It does not install a signed package, change Gateke
 print "or make system-wide changes. Your maps remain local unless you export them."
 print ""
 
+refresh_project_source() {
+  local current_branch checkout_changes
+
+  if [[ "${USA_MAP_SETUP_UPDATE:-auto}" == "skip" ]]; then
+    print "Automatic source update skipped by USA_MAP_SETUP_UPDATE=skip."
+    return
+  fi
+  if ! command -v git >/dev/null 2>&1 || ! git -C "${PROJECT_ROOT}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    print "No Git checkout detected; building the source currently on disk."
+    return
+  fi
+
+  current_branch="$(git -C "${PROJECT_ROOT}" branch --show-current)"
+  if [[ "${current_branch}" != "main" ]]; then
+    print "Source update skipped on branch '${current_branch:-detached HEAD}'."
+    return
+  fi
+
+  checkout_changes="$(git -C "${PROJECT_ROOT}" status --porcelain)"
+  if [[ -n "${checkout_changes}" ]]; then
+    print -u2 "Source update skipped because this checkout has local changes."
+    print -u2 "Commit, stash, or remove those changes before using setup as an updater."
+    return
+  fi
+
+  print "Checking origin/main for a newer USA Map Studio version..."
+  if ! git -C "${PROJECT_ROOT}" pull --ff-only origin main; then
+    print -u2 "The checkout could not be updated with a safe fast-forward."
+    print -u2 "No local files were overwritten. Resolve the Git state, then rerun setup."
+    exit 1
+  fi
+  print "Source version: $(git -C "${PROJECT_ROOT}" log -1 --oneline)"
+  print ""
+}
+
 use_portable_node() {
   local machine_architecture node_architecture archive_name node_url checksums_url
   local temporary_directory archive_path checksums_path expected_checksum actual_checksum
@@ -86,6 +121,8 @@ if command -v node >/dev/null 2>&1 && command -v npm >/dev/null 2>&1; then
     SYSTEM_NODE_USABLE=1
   fi
 fi
+
+refresh_project_source
 
 if (( ! SYSTEM_NODE_USABLE )); then
   use_portable_node

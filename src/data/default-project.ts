@@ -1,5 +1,6 @@
 import type { MapLayer, MapLocation, UsaMapProject } from "../types";
 import { PROJECT_SCHEMA, PROJECT_SCHEMA_VERSION } from "../types";
+import { materializeEffectivePinStyles } from "../lib/layers";
 
 export const DEFAULT_LAYER_ID = "layer-default";
 
@@ -63,7 +64,7 @@ export function createDefaultProject(): UsaMapProject {
     description: "Default location layer",
     createdAt: timestamp,
   });
-  return {
+  return materializeEffectivePinStyles({
     schema: PROJECT_SCHEMA,
     schemaVersion: PROJECT_SCHEMA_VERSION,
     project: {
@@ -98,7 +99,7 @@ export function createDefaultProject(): UsaMapProject {
     },
     customPins: [],
     locations: sampleLocations.map((location) => createLocation({ ...location, layerId: defaultLayer.id })),
-  };
+  });
 }
 
 export function createBlankProject(name = "Untitled map"): UsaMapProject {

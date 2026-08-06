@@ -3,7 +3,7 @@ import type { Feature, Geometry } from "geojson";
 import { STATE_BY_FIPS } from "../data/state-metadata";
 import type { MapLocation, UsaMapProject } from "../types";
 import type { EffectivePinStyle } from "./layers";
-import { effectivePinStyle, visibleLocations } from "./layers";
+import { effectivePinStyle, materializeEffectivePinStyles, visibleLocations } from "./layers";
 import { countyBoundaries, mapPath, projection, stateBoundaries, states } from "./map-geometry";
 
 const CANVAS_WIDTH = 1200;
@@ -253,6 +253,15 @@ function customPinSvg(svg: string, color: string): string {
   return svg.replace(/currentColor/gi, color);
 }
 
+function customPinSlideExtent(viewBox: string, maxExtent: number): { width: number; height: number } {
+  const [, , sourceWidth, sourceHeight] = viewBox.split(/[\s,]+/).map(Number);
+  if (!(sourceWidth > 0) || !(sourceHeight > 0)) {
+    return { width: maxExtent, height: maxExtent };
+  }
+  const scale = maxExtent / Math.max(sourceWidth, sourceHeight);
+  return { width: sourceWidth * scale, height: sourceHeight * scale };
+}
+
 export async function svgToPng(svgMarkup: string, scale = 2): Promise<ArrayBuffer> {
   const image = new Image();
   image.decoding = "async";
@@ -279,6 +288,7 @@ export async function projectToPowerPoint(
   project: UsaMapProject,
   viewport: ExportViewport = { zoom: 1, pan: { x: 0, y: 0 } },
 ): Promise<ArrayBuffer> {
+  project = materializeEffectivePinStyles(project);
   const pptx = new PptxGenJS();
   pptx.layout = "LAYOUT_WIDE";
   pptx.author = "USA Map Studio";
@@ -390,12 +400,13 @@ export async function projectToPowerPoint(
       const pinSize = style.pinSize * CANVAS_SCALE * viewport.zoom;
       const customPin = style.customPinId ? customPins.get(style.customPinId) : undefined;
       if (customPin) {
+        const extent = customPinSlideExtent(customPin.viewBox, pinSize);
         slide.addImage({
           data: svgDataUri(customPinSvg(customPin.svg, style.pinColor)),
-          x: center[0] - pinSize / 2,
-          y: center[1] - pinSize / 2,
-          w: pinSize,
-          h: pinSize,
+          x: center[0] - extent.width / 2,
+          y: center[1] - extent.height / 2,
+          w: extent.width,
+          h: extent.height,
           objectName: `${objectPrefix}Custom pin - ${location.label}`,
         });
       } else {

@@ -28,6 +28,10 @@ test("source setup scripts build and smoke-test without creating installers", ()
   assert.match(mac, /npm run desktop:smoke/);
   assert.match(windows, /run build/);
   assert.match(windows, /run desktop:smoke/);
+  assert.match(mac, /pull --ff-only origin main/);
+  assert.match(windows, /pull --ff-only origin main/);
+  assert.match(mac, /USA_MAP_SETUP_UPDATE/);
+  assert.match(windows, /USA_MAP_SETUP_UPDATE/);
   assert.match(mac, /configure-map-mcp\.mjs install/);
   assert.match(windows, /configure-map-mcp\.mjs.*install/);
   assert.doesNotMatch(`${mac}\n${windows}`, /maker-squirrel|maker-dmg|create-installer/i);

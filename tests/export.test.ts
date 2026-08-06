@@ -48,6 +48,37 @@ test("custom SVG pins remain separate vector objects without flattening the map"
   assert.equal(media.filter((entry) => entry.name.endsWith(".png")).length, 1, "PowerPoint receives one compatibility preview for the custom SVG pin");
 });
 
+test("PowerPoint uses the effective shared pin size and preserves custom SVG aspect ratio", async () => {
+  const project = createDefaultProject();
+  const { design } = createCustomPinDesign(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 12"><rect width="24" height="12" fill="currentColor"/></svg>',
+    "wide-pin.svg",
+  );
+  project.customPins.push(design);
+  project.sharedPinStyle = {
+    enabled: true,
+    pinType: "circle",
+    customPinId: design.id,
+    pinColor: "#ffb000",
+    pinSize: 28,
+  };
+  project.locations.forEach((location) => {
+    location.customPinId = null;
+    location.pinSize = 8;
+  });
+
+  const archive = await JSZip.loadAsync(new Uint8Array(await projectToPowerPoint(project)));
+  const slideXml = await archive.file("ppt/slides/slide1.xml")?.async("string");
+  assert.ok(slideXml);
+  const picture = slideXml.match(/<p:pic>.*?name="\[Layer 1: Layer 1 - Locations\] Custom pin - Seattle, WA".*?<\/p:pic>/s)?.[0];
+  assert.ok(picture, "the first location should use the effective shared custom pin");
+  const extent = picture.match(/<a:ext cx="(\d+)" cy="(\d+)"/);
+  assert.ok(extent);
+  const maxExtentEmu = Math.round(28 * (7.5 / 720) * 914400);
+  assert.ok(Math.abs(Number(extent[1]) - maxExtentEmu) <= 1, "the PowerPoint pin width should match the 28 px canvas size");
+  assert.ok(Math.abs(Number(extent[2]) - maxExtentEmu / 2) <= 1, "the custom pin height should preserve its 2:1 viewBox");
+});
+
 test("PowerPoint export omits hidden layers and prefixes visible objects for the Selection Pane", async () => {
   const project = createDefaultProject();
   project.layers[0].name = "Layer #1 - US ITER cities";

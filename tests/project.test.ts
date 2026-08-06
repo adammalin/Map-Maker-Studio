@@ -23,6 +23,18 @@ test("project JSON round-trips all map and location fields", () => {
   assert.equal(restored.locations[0].layerId, source.layers[0].id);
 });
 
+test("project JSON stores each location with the effective shared pin size", () => {
+  const source = createDefaultProject();
+  source.sharedPinStyle.pinSize = 34;
+  source.locations.forEach((location) => { location.pinSize = 7; });
+
+  const serialized = JSON.parse(serializeProject(source));
+
+  assert.equal(serialized.sharedPinStyle.pinSize, 34);
+  assert.ok(serialized.locations.every((location: { pinSize: number }) => location.pinSize === 34));
+  assert.ok(source.locations.every((location) => location.pinSize === 7), "serialization does not mutate the live project");
+});
+
 test("project parser rejects unrelated JSON", () => {
   assert.throws(() => parseProjectText('{"name":"not a project"}'), /not a USA Map Studio project/i);
 });
@@ -35,6 +47,7 @@ test("project parser rejects invalid coordinates", () => {
 
 test("project JSON embeds custom SVG pins and restores location assignments", () => {
   const source = createDefaultProject();
+  source.sharedPinStyle.enabled = false;
   const { design } = createCustomPinDesign(
     '<svg viewBox="0 0 24 24"><path d="M12 1L23 23H1Z" fill="currentColor"/></svg>',
     "Triangle marker.svg",

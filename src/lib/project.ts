@@ -12,7 +12,7 @@ import {
   type SharedPinStyle,
   type UsaMapProject,
 } from "../types";
-import { sharedPinStyleFromLocation } from "./layers";
+import { materializeEffectivePinStyles, sharedPinStyleFromLocation } from "./layers";
 
 const PIN_TYPES = new Set<PinType>(["pin", "circle", "square", "diamond", "star"]);
 const LABEL_POSITIONS = new Set<LabelPosition>(["right", "left", "above", "below"]);
@@ -196,7 +196,7 @@ export function parseProjectText(text: string): UsaMapProject {
     layerIds,
     legacyLayer?.id ?? null,
   ));
-  return {
+  return materializeEffectivePinStyles({
     schema: PROJECT_SCHEMA,
     schemaVersion: PROJECT_SCHEMA_VERSION,
     project: {
@@ -231,12 +231,13 @@ export function parseProjectText(text: string): UsaMapProject {
     ),
     customPins,
     locations,
-  };
+  });
 }
 
 export function serializeProject(project: UsaMapProject): string {
+  const snapshot = materializeEffectivePinStyles(project);
   return `${JSON.stringify({
-    ...project,
-    project: { ...project.project, updatedAt: new Date().toISOString() },
+    ...snapshot,
+    project: { ...snapshot.project, updatedAt: new Date().toISOString() },
   }, null, 2)}\n`;
 }

@@ -82,7 +82,7 @@ def footer(pdf, page_number):
     pdf.rect(0, 0, PAGE_W, 48, stroke=0, fill=1)
     pdf.setFillColor(WHITE)
     pdf.setFont("Helvetica", 7.2)
-    pdf.drawString(40, 28, "USA Map Studio v0.5.0 | Local desktop quick start | August 6, 2026")
+    pdf.drawString(40, 28, "USA Map Studio v0.5.1 | Local desktop quick start | August 6, 2026")
     pdf.drawRightString(572, 28, f"PAGE {page_number} OF 6")
 
 
@@ -167,7 +167,7 @@ def build_pdf(output):
     pdf.setFillColor(SOFT_GREEN)
     pdf.rect(40, 77, 532, 96, stroke=0, fill=1)
     label(pdf, "What setup does", 56, 149)
-    wrapped(pdf, "The script installs exact dependencies, builds the Electron interface, and runs a hidden map/UI smoke check. It does not create a DMG, PKG, MSI, or EXE installer, disable Gatekeeper, or make system-wide changes. Later, double-click Start-USA-Map-Studio.command on Mac or Start-USA-Map-Studio.cmd on Windows.", 56, 129, 500, size=8.2, leading=11.1)
+    wrapped(pdf, "When rerun from a clean main Git checkout, setup first fast-forwards origin/main so it cannot quietly rebuild an old clone. Local changes and other branches are never overwritten. The script then installs exact dependencies, builds the Electron interface, and runs a hidden map/UI smoke check. It does not create a DMG, PKG, MSI, or EXE installer, disable Gatekeeper, or make system-wide changes. Later, double-click Start-USA-Map-Studio.command on Mac or Start-USA-Map-Studio.cmd on Windows.", 56, 129, 500, size=7.7, leading=10.2)
     footer(pdf, 1)
     pdf.showPage()
 
@@ -209,11 +209,11 @@ def build_pdf(output):
     page_header(pdf, "Publish and recover | local-first workflow", "Export editable slide objects.", "SVG, PNG, PowerPoint, and project JSON share one composition.", 4)
     step_card(pdf, "1", "SVG", "Scalable vector artwork with a named group for each visible location layer.", 40, 516, 120, 92)
     step_card(pdf, "2", "PNG", "A 2400 x 1440 raster image for documents, email, and quick review.", 174, 516, 120, 92, SOFT_NAVY, NAVY)
-    step_card(pdf, "3", "PPTX", "Editable states, text, pins, and legend. Selection Pane names identify each visible layer.", 308, 516, 120, 92, PALE, BLUE)
+    step_card(pdf, "3", "PPTX", "Editable states, text, pins, and legend using the visible pin size and viewport.", 308, 516, 120, 92, PALE, BLUE)
     step_card(pdf, "4", "JSON", "The complete editable project, including embedded custom pin artwork. Reopen it to continue work.", 442, 516, 130, 92, SOFT_GREEN, GREEN)
     label(pdf, "Good working sequence", 40, 478)
     bullet(pdf, "1  Save the project once", "Choose a .usmap.json path. Later project edits autosave to that file; a recovery JSON is restored on relaunch.", 40, 456, 532)
-    bullet(pdf, "2  Set layer visibility", "Choose the exact layer combination for the audience, then export SVG, PNG, or PowerPoint at Fit view.", 40, 402, 532, BLUE)
+    bullet(pdf, "2  Review the visible map", "Set layers, pin size, and zoom/pan exactly as needed; SVG, PNG, and PowerPoint reproduce that view.", 40, 402, 532, BLUE)
     bullet(pdf, "3  Keep source and output together", "Store the CSV and project JSON beside exported artwork when the map must be reproduced later.", 40, 348, 532, FORGE)
     label(pdf, "Troubleshooting", 40, 292)
     wrapped(pdf, "Setup fails: rerun the setup script; it repairs dependencies and rebuilds safely. A city is unresolved: add exact coordinates or use the official Census place name. Hide a city: use its eye control; the row and JSON data remain. Labels overlap: move the label left, right, above, or below. Autosave fails: keep the app open, check the status chip, and use Save project to choose a writable location.", 40, 273, 532, size=8.8, leading=12)
