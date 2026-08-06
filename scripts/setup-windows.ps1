@@ -168,7 +168,7 @@ try {
 
 Write-Host ""
 Write-Host "Setup verified. For later launches, double-click Start-USA-Map-Studio.cmd"
-Write-Host "or run scripts\start-windows.ps1 from PowerShell."
+Write-Host "or run: & `"$(Join-Path $ProjectRoot 'Start-USA-Map-Studio.cmd')`""
 Write-Host ""
 if ($env:USA_MAP_SETUP_STAGE_ONLY -eq "1") { exit 0 }
 

@@ -24,6 +24,8 @@ test("Electron renderer keeps Node integration disabled", () => {
 test("source setup scripts build and smoke-test without creating installers", () => {
   const mac = fs.readFileSync(path.join(root, "scripts", "setup-macos.zsh"), "utf8");
   const windows = fs.readFileSync(path.join(root, "scripts", "setup-windows.ps1"), "utf8");
+  const guideSource = fs.readFileSync(path.join(root, "scripts", "create_user_guide_pdf.py"), "utf8");
+  const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
   assert.match(mac, /npm run build/);
   assert.match(mac, /npm run desktop:smoke/);
   assert.match(windows, /run build/);
@@ -34,5 +36,12 @@ test("source setup scripts build and smoke-test without creating installers", ()
   assert.match(windows, /USA_MAP_SETUP_UPDATE/);
   assert.match(mac, /configure-map-mcp\.mjs install/);
   assert.match(windows, /configure-map-mcp\.mjs.*install/);
+  assert.match(mac, /Start-USA-Map-Studio\.command/);
+  assert.match(windows, /Start-USA-Map-Studio\.cmd/);
+  assert.match(guideSource, /Mac relaunch/);
+  assert.match(guideSource, /Windows relaunch/);
+  assert.match(guideSource, /https:\/\/github\.com\/adammalin\/Map-Maker-Studio/);
+  assert.match(readme, /\$HOME\/Map-Maker-Studio\/Start-USA-Map-Studio\.command/);
+  assert.match(readme, /\$env:USERPROFILE\\Map-Maker-Studio\\Start-USA-Map-Studio\.cmd/);
   assert.doesNotMatch(`${mac}\n${windows}`, /maker-squirrel|maker-dmg|create-installer/i);
 });

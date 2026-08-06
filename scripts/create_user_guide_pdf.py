@@ -60,6 +60,19 @@ def label(pdf, text, x, y, color=GREEN):
     pdf.drawString(x, y, text.upper())
 
 
+def linked_text(pdf, prefix, url, x, y):
+    pdf.setFillColor(DARK)
+    pdf.setFont("Helvetica-Bold", 7.8)
+    pdf.drawString(x, y, prefix)
+    prefix_width = stringWidth(prefix, "Helvetica-Bold", 7.8)
+    link_x = x + prefix_width + 4
+    pdf.setFillColor(BLUE)
+    pdf.setFont("Helvetica-Bold", 7.8)
+    pdf.drawString(link_x, y, url)
+    link_width = stringWidth(url, "Helvetica-Bold", 7.8)
+    pdf.linkURL(url, (link_x, y - 2, link_x + link_width, y + 9), relative=0)
+
+
 def page_header(pdf, eyebrow, title, subtitle, page_number):
     pdf.setFillColor(GREEN)
     pdf.rect(0, PAGE_H - 142, PAGE_W, 142, stroke=0, fill=1)
@@ -150,7 +163,8 @@ def build_pdf(output):
 
     page_header(pdf, "No signed installer required | macOS and Windows", "Install from source.", "One verified script prepares, builds, checks, and starts the local desktop app.", 1)
     label(pdf, "Before you begin", 40, 614)
-    wrapped(pdf, "Use Terminal on Mac or PowerShell on Windows as a normal user. The first setup needs internet access for application dependencies and a private Node.js runtime when a compatible system copy is unavailable.", 40, 595, 532, size=9.1, leading=12.4)
+    wrapped(pdf, "Use macOS 12 or later, or Windows 10/11, with Git and internet access during first setup. Run Terminal or PowerShell as a normal user. Setup uses an existing compatible Node.js runtime or downloads a private pinned copy.", 40, 595, 532, size=8.7, leading=11.8)
+    linked_text(pdf, "Public source:", "https://github.com/adammalin/Map-Maker-Studio", 40, 554)
     code_box(pdf, "Mac - Terminal", [
         "git clone https://github.com/adammalin/Map-Maker-Studio.git \\",
         "  \"$HOME/Map-Maker-Studio\"",
@@ -165,9 +179,21 @@ def build_pdf(output):
         "  -File \".\\scripts\\setup-windows.ps1\"",
     ], 40, 202, 532, 168, NAVY)
     pdf.setFillColor(SOFT_GREEN)
-    pdf.rect(40, 77, 532, 96, stroke=0, fill=1)
-    label(pdf, "What setup does", 56, 149)
-    wrapped(pdf, "When rerun from a clean main Git checkout, setup first fast-forwards origin/main so it cannot quietly rebuild an old clone. Local changes and other branches are never overwritten. The script then installs exact dependencies, builds the Electron interface, and runs a hidden map/UI smoke check. It does not create a DMG, PKG, MSI, or EXE installer, disable Gatekeeper, or make system-wide changes. Later, double-click Start-USA-Map-Studio.command on Mac or Start-USA-Map-Studio.cmd on Windows.", 56, 129, 500, size=7.7, leading=10.2)
+    pdf.rect(40, 57, 532, 116, stroke=0, fill=1)
+    label(pdf, "Relaunch or update", 56, 151)
+    pdf.setFillColor(NAVY)
+    pdf.setFont("Helvetica-Bold", 7.2)
+    pdf.drawString(56, 133, "Mac relaunch")
+    pdf.setFillColor(DARK)
+    pdf.setFont("Courier", 6.7)
+    pdf.drawString(126, 133, "/bin/zsh \"$HOME/Map-Maker-Studio/Start-USA-Map-Studio.command\"")
+    pdf.setFillColor(NAVY)
+    pdf.setFont("Helvetica-Bold", 7.2)
+    pdf.drawString(56, 117, "Windows relaunch")
+    pdf.setFillColor(DARK)
+    pdf.setFont("Courier", 6.7)
+    pdf.drawString(145, 117, "& \"$env:USERPROFILE\\Map-Maker-Studio\\Start-USA-Map-Studio.cmd\"")
+    wrapped(pdf, "To update, close the app and rerun the setup command above. A clean main checkout safely pulls the latest release before rebuilding and testing. Setup creates no DMG, PKG, MSI, or EXE installer and makes no system-wide changes.", 56, 96, 500, size=7.2, leading=9.3)
     footer(pdf, 1)
     pdf.showPage()
 

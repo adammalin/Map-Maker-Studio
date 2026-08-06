@@ -37,7 +37,7 @@ The committed PDF intentionally lives under `docs/` so the repository, setup scr
 
 ## macOS setup - no signed installer
 
-Requirements: macOS 12 or later and internet access during first setup. The script uses an existing compatible Node.js runtime or downloads a private pinned copy into `.runtime`.
+Requirements: macOS 12 or later, [Git](https://git-scm.com/downloads), and internet access during first setup. The script uses an existing compatible Node.js runtime or downloads a private pinned copy into `.runtime`.
 
 ```zsh
 git clone https://github.com/adammalin/Map-Maker-Studio.git "$HOME/Map-Maker-Studio"
@@ -45,15 +45,15 @@ cd "$HOME/Map-Maker-Studio"
 /bin/zsh scripts/setup-macos.zsh
 ```
 
-For later launches, double-click `Start-USA-Map-Studio.command` or run:
+For later launches, double-click `Start-USA-Map-Studio.command` in the cloned folder or paste this command from any directory:
 
 ```zsh
-/bin/zsh scripts/start-macos.zsh
+/bin/zsh "$HOME/Map-Maker-Studio/Start-USA-Map-Studio.command"
 ```
 
 ## Windows setup - no signed installer
 
-Open PowerShell as a normal user. Do not use Run as administrator.
+Requirements: Windows 10 or 11, [Git](https://git-scm.com/downloads), and internet access during first setup. Open PowerShell as a normal user; do not use Run as administrator.
 
 ```powershell
 git clone https://github.com/adammalin/Map-Maker-Studio.git "$env:USERPROFILE\Map-Maker-Studio"
@@ -61,7 +61,13 @@ Set-Location "$env:USERPROFILE\Map-Maker-Studio"
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ".\scripts\setup-windows.ps1"
 ```
 
-For later launches, double-click `Start-USA-Map-Studio.cmd` or run `scripts\start-windows.ps1` from PowerShell.
+For later launches, double-click `Start-USA-Map-Studio.cmd` in the cloned folder or paste this command from any directory:
+
+```powershell
+& "$env:USERPROFILE\Map-Maker-Studio\Start-USA-Map-Studio.cmd"
+```
+
+To update either platform, close USA Map Studio and rerun the same setup command used for installation. A clean `main` checkout safely fast-forwards to the latest public release before rebuilding and testing.
 
 The setup scripts first check `origin/main` and safely fast-forward a clean `main` checkout, then install exact dependency versions, build the renderer, and run a hidden Electron smoke test. This makes rerunning setup an update-and-rebuild workflow instead of rebuilding an old clone. Local changes are never overwritten: update is skipped when the checkout is dirty or on another branch. Set `USA_MAP_SETUP_UPDATE=skip` before setup when deliberately building the source already on disk. The scripts do not create DMG, PKG, MSI, EXE, or Squirrel installers and do not disable operating-system security controls.
 

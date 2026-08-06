@@ -148,7 +148,7 @@ if [[ "${USA_MAP_SETUP_MCP:-install}" != "skip" ]]; then
 fi
 print ""
 print "Setup verified. For later launches, double-click Start-USA-Map-Studio.command"
-print "or run: /bin/zsh \"${PROJECT_ROOT}/scripts/start-macos.zsh\""
+print "or run: /bin/zsh \"${PROJECT_ROOT}/Start-USA-Map-Studio.command\""
 print ""
 
 if [[ "${USA_MAP_SETUP_STAGE_ONLY:-0}" == "1" ]]; then
