@@ -1,13 +1,48 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { svgToPowerPoint } from "../src/lib/export";
+import JSZip from "jszip";
+import { createDefaultProject } from "../src/data/default-project";
+import { createCustomPinDesign } from "../src/lib/custom-pin";
+import { projectToPowerPoint } from "../src/lib/export";
 
-test("PowerPoint export produces an OOXML zip with a vector SVG map", async () => {
-  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720"><rect width="1200" height="720" fill="#f3f6f4"/><text x="60" y="60">Map export test</text></svg>';
-  const bytes = new Uint8Array(await svgToPowerPoint(svg, "Map export test", "Test project"));
-  assert.ok(bytes.byteLength > 20_000);
+test("PowerPoint export uses separate editable objects instead of a full-slide image", async () => {
+  const project = createDefaultProject();
+  project.map.showStateLabels = true;
+  project.map.stateColors["47"] = "#fe5000";
+  const bytes = new Uint8Array(await projectToPowerPoint(project));
+  assert.ok(bytes.byteLength > 100_000);
   assert.deepEqual(Array.from(bytes.slice(0, 4)), [0x50, 0x4b, 0x03, 0x04]);
-  const text = new TextDecoder("latin1").decode(bytes);
-  assert.match(text, /ppt\/slides\/slide1\.xml/);
-  assert.match(text, /ppt\/media\/image-\d+-\d+\.svg/);
+
+  const archive = await JSZip.loadAsync(bytes);
+  const slideXml = await archive.file("ppt/slides/slide1.xml")?.async("string");
+  assert.ok(slideXml);
+  assert.doesNotMatch(slideXml, /<p:pic>/, "the complete map must not be embedded as one picture");
+  assert.ok((slideXml.match(/<a:custGeom>/g) ?? []).length >= 52, "states and boundary layers should be native freeform shapes");
+  assert.ok((slideXml.match(/<p:sp>/g) ?? []).length >= 120, "the slide should contain separately editable objects");
+  assert.match(slideXml, /name="State - TN - Tennessee"/);
+  assert.match(slideXml, /name="Map title"/);
+  assert.match(slideXml, /name="Location label - Seattle, WA"/);
+  assert.match(slideXml, /name="State label - TN"/);
+  assert.match(slideXml, /FE5000/i);
+  assert.equal(Object.values(archive.files).filter((entry) => entry.name.startsWith("ppt/media/") && !entry.dir).length, 0);
+});
+
+test("custom SVG pins remain separate vector objects without flattening the map", async () => {
+  const project = createDefaultProject();
+  const { design } = createCustomPinDesign(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="currentColor" d="M12 1 23 12 12 23 1 12Z"/></svg>',
+    "diamond.svg",
+  );
+  project.customPins.push(design);
+  project.locations[0].customPinId = design.id;
+
+  const archive = await JSZip.loadAsync(new Uint8Array(await projectToPowerPoint(project)));
+  const slideXml = await archive.file("ppt/slides/slide1.xml")?.async("string");
+  assert.ok(slideXml);
+  assert.equal((slideXml.match(/name="Custom pin - Seattle, WA"/g) ?? []).length, 1);
+  assert.match(slideXml, /name="State - TN - Tennessee"/);
+  assert.ok((slideXml.match(/<a:custGeom>/g) ?? []).length >= 52);
+  const media = Object.values(archive.files).filter((entry) => entry.name.startsWith("ppt/media/") && !entry.dir);
+  assert.equal(media.filter((entry) => entry.name.endsWith(".svg")).length, 1);
+  assert.equal(media.filter((entry) => entry.name.endsWith(".png")).length, 1, "PowerPoint receives one compatibility preview for the custom SVG pin");
 });

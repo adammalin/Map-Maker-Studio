@@ -1,18 +1,9 @@
 import { forwardRef, useMemo, useRef } from "react";
-import { geoAlbersUsa, geoPath } from "d3-geo";
-import { feature, mesh } from "topojson-client";
-import type { Feature, FeatureCollection, Geometry } from "geojson";
-import statesTopologyData from "../data/us-states-2025.topo.json";
-import countiesTopologyData from "../data/us-counties-2025.topo.json";
+import type { Feature, Geometry } from "geojson";
 import { STATE_BY_FIPS } from "../data/state-metadata";
 import { customPinInnerMarkup, customPinTransform } from "../lib/custom-pin";
+import { countyBoundaries, mapPath as path, projection, stateBoundaries, states } from "../lib/map-geometry";
 import type { CustomPinDesign, MapLocation, UsaMapProject } from "../types";
-
-interface StateProperties {
-  STATEFP: string;
-  STUSPS: string;
-  NAME: string;
-}
 
 interface MapCanvasProps {
   project: UsaMapProject;
@@ -26,35 +17,6 @@ interface MapCanvasProps {
   onPanChange(pan: { x: number; y: number }): void;
   onZoomChange(zoom: number): void;
 }
-
-const statesTopology = statesTopologyData as unknown as {
-  type: "Topology";
-  objects: { states: object };
-  arcs: unknown[];
-};
-const countiesTopology = countiesTopologyData as unknown as {
-  type: "Topology";
-  objects: { counties: object };
-  arcs: unknown[];
-};
-
-const states = feature(
-  statesTopology as never,
-  statesTopology.objects.states as never,
-) as unknown as FeatureCollection<Geometry, StateProperties>;
-const stateBoundaries = mesh(
-  statesTopology as never,
-  statesTopology.objects.states as never,
-  (left, right) => left !== right,
-);
-const countyBoundaries = mesh(
-  countiesTopology as never,
-  countiesTopology.objects.counties as never,
-  (left, right) => left !== right,
-);
-
-const projection = geoAlbersUsa().fitExtent([[54, 104], [1146, 676]], states);
-const path = geoPath(projection);
 
 const labelOffsets: Record<MapLocation["labelPosition"], { x: number; y: number; anchor: "start" | "middle" | "end" }> = {
   right: { x: 14, y: 4, anchor: "start" },

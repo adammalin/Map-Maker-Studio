@@ -205,10 +205,10 @@ def build_pdf(output):
     footer(pdf, 3)
     pdf.showPage()
 
-    page_header(pdf, "Publish and recover | local-first workflow", "Export what you see.", "SVG, PNG, PowerPoint, and project JSON share one composition.", 4)
+    page_header(pdf, "Publish and recover | local-first workflow", "Export editable slide objects.", "SVG, PNG, PowerPoint, and project JSON share one composition.", 4)
     step_card(pdf, "1", "SVG", "Best for scalable artwork and downstream design tools. State lines, labels, pins, and legend remain vector content.", 40, 516, 120, 92)
     step_card(pdf, "2", "PNG", "A 2400 x 1440 raster image for documents, email, and quick review.", 174, 516, 120, 92, SOFT_NAVY, NAVY)
-    step_card(pdf, "3", "PPTX", "A one-slide 16:9 PowerPoint with the map embedded as scalable vector artwork and source notes.", 308, 516, 120, 92, PALE, BLUE)
+    step_card(pdf, "3", "PPTX", "A 16:9 deck with separate editable states, text, standard pins, legend, and source notes.", 308, 516, 120, 92, PALE, BLUE)
     step_card(pdf, "4", "JSON", "The complete editable project, including embedded custom pin artwork. Reopen it to continue work.", 442, 516, 130, 92, SOFT_GREEN, GREEN)
     label(pdf, "Good working sequence", 40, 478)
     bullet(pdf, "1  Save the project", "Keep a .usmap.json source file before making presentation-specific variations.", 40, 456, 532)

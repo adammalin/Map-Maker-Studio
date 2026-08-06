@@ -58,4 +58,4 @@ Supported pin types are `pin`, `circle`, `square`, `diamond`, and `star`. Suppor
 
 ## Compatibility
 
-Version 0.2.1 writes schema version 2 and also reads schema version 1. A version 1 project migrates in memory with an empty `customPins` library and `null` custom-pin references; it is not rewritten until the user saves. The app rejects unrelated JSON, unsupported schema versions, missing core objects, invalid coordinates, duplicate custom-pin IDs, dangling custom-pin references, and malformed required fields instead of silently dropping data.
+Version 0.3.0 writes schema version 2 and also reads schema version 1. A version 1 project migrates in memory with an empty `customPins` library and `null` custom-pin references; it is not rewritten until the user saves. The app rejects unrelated JSON, unsupported schema versions, missing core objects, invalid coordinates, duplicate custom-pin IDs, dangling custom-pin references, and malformed required fields instead of silently dropping data.

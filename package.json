@@ -1,7 +1,7 @@
 {
   "name": "usa-map-studio",
   "productName": "USA Map Studio",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "private": true,
   "description": "Local-first desktop editor for accurate, data-driven maps of the United States.",
   "author": "USA Map Studio",
@@ -20,6 +20,7 @@
     "mcp": "node mcp/server.mjs",
     "mcp:install": "node scripts/configure-map-mcp.mjs install",
     "mcp:remove": "node scripts/configure-map-mcp.mjs remove",
+    "sample:pptx": "node --import tsx scripts/create-editable-pptx-sample.ts",
     "test": "node --import tsx --test tests/*.test.ts tests/*.test.mjs",
     "test:all": "npm test && npm run build && npm run desktop:smoke",
     "package:mac": "npm run build && node scripts/package-electron.mjs mac",
@@ -48,6 +49,7 @@
     "@types/topojson-client": "^3.1.5",
     "@vitejs/plugin-react": "6.0.2",
     "electron": "43.2.0",
+    "jszip": "^3.10.1",
     "tsx": "^4.23.1",
     "typescript": "5.9.3",
     "vite": "8.2.0"

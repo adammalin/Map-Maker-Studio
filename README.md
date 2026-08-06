@@ -13,18 +13,19 @@ USA Map Studio is a local-first Electron desktop editor for building accurate ma
 - Style the map canvas, default state fill, individual state colors, state lines, optional county lines, state abbreviations, label halo, and legend.
 - Pan and zoom the live map, select a state for a fill override, and drag pins to refine coordinates.
 - Save and reopen a versioned `.usmap.json` project containing the complete map configuration and every location.
-- Export a scalable SVG, a 2400 x 1440 PNG, or a one-slide 16:9 PowerPoint with the map retained as vector artwork.
+- Export a scalable SVG, a 2400 x 1440 PNG, or a one-slide 16:9 PowerPoint whose states, boundary layers, text, standard pins, and legend are separate editable objects. Imported custom SVG pins remain separate movable vector objects.
 - Let ChatGPT desktop, Codex, or another local MCP client inspect the open project and stage visible map-change proposals for human review.
 
 The interface deliberately follows the clear hierarchy and square-edged desktop design language of OrgChart Studio while remaining a separate product.
 
-Current application version: **0.2.1**.
+Current application version: **0.3.0**.
 
 ## Documentation
 
 - [USA Map Studio User Guide (PDF)](docs/USA-Map-Studio-User-Guide.pdf) - installation commands, workspace modes, CSV import, custom SVG pins, ORNL color swatches, exports, and local MCP control.
 - [Project file format](docs/PROJECT-FORMAT.md) - schema version 2, embedded custom pins, validation, and version 1 migration.
 - [Local MCP integration](docs/MCP.md) - security model, setup, client configuration, and the review-first workflow.
+- [Editable PowerPoint example](examples/usa-map-studio-editable-export.pptx) - a generated sample for checking the PowerPoint Selection Pane and direct object editing.
 
 The committed PDF intentionally lives under `docs/` so the repository, setup scripts, and packaged desktop app all resolve the same guide.
 
@@ -127,6 +128,8 @@ npm run desktop:smoke
 ```
 
 Run all checks together with `npm run test:all`. Create unsigned application folders - not installers - with `npm run package:mac` or `npm run package:windows`.
+
+Run `npm run sample:pptx` to regenerate the committed editable PowerPoint example from the default project.
 
 To regenerate the committed PDF guide, install the small documentation dependency with `python3 -m pip install -r requirements-docs.txt`, then run `npm run guide`.
 
