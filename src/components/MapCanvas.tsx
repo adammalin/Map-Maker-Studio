@@ -228,24 +228,40 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(function MapC
             const metadata = STATE_BY_FIPS.get(state.properties.STATEFP);
             if (!metadata || !Number.isFinite(x) || !Number.isFinite(y)) return null;
             return (
-              <text
-                key={`label-${metadata.fips}`}
-                x={x}
-                y={y}
-                textAnchor="middle"
-                dominantBaseline="central"
-                fill={project.map.labelColor}
-                stroke={project.map.labelHaloColor}
-                strokeWidth="3"
-                paintOrder="stroke"
-                fontFamily="Aptos, Arial, sans-serif"
-                fontSize="8.5"
-                fontWeight="800"
-                letterSpacing="0.05em"
-                pointerEvents="none"
-              >
-                {metadata.abbreviation}
-              </text>
+              <g key={`label-${metadata.fips}`} aria-hidden="true" pointerEvents="none">
+                <text
+                  data-label-halo="true"
+                  x={x}
+                  y={y}
+                  textAnchor="middle"
+                  dominantBaseline="central"
+                  fill={project.map.labelHaloColor}
+                  stroke={project.map.labelHaloColor}
+                  strokeWidth="3"
+                  strokeLinejoin="round"
+                  fontFamily="Aptos, Arial, sans-serif"
+                  fontSize="8.5"
+                  fontWeight="800"
+                  letterSpacing="0.05em"
+                >
+                  {metadata.abbreviation}
+                </text>
+                <text
+                  data-label-text="true"
+                  x={x}
+                  y={y}
+                  textAnchor="middle"
+                  dominantBaseline="central"
+                  fill={project.map.labelColor}
+                  stroke="none"
+                  fontFamily="Aptos, Arial, sans-serif"
+                  fontSize="8.5"
+                  fontWeight="800"
+                  letterSpacing="0.05em"
+                >
+                  {metadata.abbreviation}
+                </text>
+              </g>
             );
           }) : null}
         </g>
@@ -253,6 +269,7 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(function MapC
           {projectedLocations.map(({ location, point: [x, y] }) => {
             const selected = location.id === selectedLocationId;
             const offset = labelOffsets[location.labelPosition];
+            const labelX = offset.x + (offset.anchor === "start" ? location.pinSize * 0.25 : offset.anchor === "end" ? -location.pinSize * 0.25 : 0);
             return (
               <g
                 key={location.id}
@@ -279,22 +296,38 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(function MapC
                 ) : null}
                 <PinSymbol location={location} customPin={location.customPinId ? customPins.get(location.customPinId) : undefined} />
                 {project.map.showLocationLabels && location.showLabel ? (
-                  <text
-                    x={offset.x + (offset.anchor === "start" ? location.pinSize * 0.25 : offset.anchor === "end" ? -location.pinSize * 0.25 : 0)}
-                    y={offset.y}
-                    textAnchor={offset.anchor}
-                    dominantBaseline="central"
-                    fill={location.labelColor}
-                    stroke={project.map.labelHaloColor}
-                    strokeWidth="4"
-                    paintOrder="stroke"
-                    fontFamily="Aptos, Arial, sans-serif"
-                    fontSize="11.5"
-                    fontWeight="800"
-                    pointerEvents="none"
-                  >
-                    {location.label}
-                  </text>
+                  <g aria-hidden="true" pointerEvents="none">
+                    <text
+                      data-label-halo="true"
+                      x={labelX}
+                      y={offset.y}
+                      textAnchor={offset.anchor}
+                      dominantBaseline="central"
+                      fill={project.map.labelHaloColor}
+                      stroke={project.map.labelHaloColor}
+                      strokeWidth="4"
+                      strokeLinejoin="round"
+                      fontFamily="Aptos, Arial, sans-serif"
+                      fontSize="11.5"
+                      fontWeight="800"
+                    >
+                      {location.label}
+                    </text>
+                    <text
+                      data-label-text="true"
+                      x={labelX}
+                      y={offset.y}
+                      textAnchor={offset.anchor}
+                      dominantBaseline="central"
+                      fill={location.labelColor}
+                      stroke="none"
+                      fontFamily="Aptos, Arial, sans-serif"
+                      fontSize="11.5"
+                      fontWeight="800"
+                    >
+                      {location.label}
+                    </text>
+                  </g>
                 ) : null}
               </g>
             );

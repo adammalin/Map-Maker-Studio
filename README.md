@@ -18,7 +18,7 @@ USA Map Studio is a local-first Electron desktop editor for building accurate ma
 
 The interface deliberately follows the clear hierarchy and square-edged desktop design language of OrgChart Studio while remaining a separate product.
 
-Current application version: **0.3.0**.
+Current application version: **0.3.1**.
 
 ## Documentation
 

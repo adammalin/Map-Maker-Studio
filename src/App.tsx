@@ -58,7 +58,7 @@ const WORKSPACE_MODE_COPY: Record<WorkspaceMode, { title: string; description: s
   export: { title: "Export preview", description: "Review the composition and choose an output format" },
 };
 
-const APP_VERSION = "0.3.0";
+const APP_VERSION = "0.3.1";
 
 export function App() {
   const [history, setHistory] = useState<HistoryState>({ past: [], present: createDefaultProject(), future: [] });

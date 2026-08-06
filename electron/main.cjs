@@ -238,6 +238,9 @@ async function runSmoke(window) {
       list: Boolean(list),
       locationRows: document.querySelectorAll('.location-row').length,
       statePaths: document.querySelectorAll('.map-state').length,
+      labelHaloLayers: document.querySelectorAll('[data-label-halo="true"]').length,
+      labelTextLayers: document.querySelectorAll('[data-label-text="true"]').length,
+      paintOrderLabels: document.querySelectorAll('text[paint-order]').length,
       width: Math.round(svgBounds?.width || 0),
       height: Math.round(svgBounds?.height || 0),
       documentClientWidth: document.documentElement.clientWidth,
@@ -428,6 +431,8 @@ async function runSmoke(window) {
       proposalGone: !document.querySelector('[data-testid="ai-proposal-banner"]'),
       customPin: Boolean(document.querySelector('.custom-pin-symbol path')),
       exportMarkupIncludesCustomPin: /custom-pin-symbol/.test(exportMarkup) && /currentColor/.test(exportMarkup),
+      exportMarkupUsesLayeredLabels: /data-label-halo="true"/.test(exportMarkup) &&
+        /data-label-text="true"/.test(exportMarkup) && !/paint-order/i.test(exportMarkup),
       customPinRasterized: rasterized,
     };
   })()`);
@@ -447,6 +452,7 @@ async function runSmoke(window) {
     typeof embeddedDesign?.svg === "string" && embeddedDesign.svg.includes("currentColor") &&
     !/script|onload/i.test(embeddedDesign.svg);
   result.customPinExports = customAppliedState.exportMarkupIncludesCustomPin && customAppliedState.customPinRasterized;
+  result.svgLabelExportLayered = customAppliedState.exportMarkupUsesLayeredLabels;
   if (capturePath) {
     await window.webContents.executeJavaScript(`document.querySelector('[data-workspace-mode="locations"]')?.click()`);
     await new Promise((resolve) => setTimeout(resolve, 120));
@@ -461,11 +467,12 @@ async function runSmoke(window) {
   }
   const passed = result.shell && result.map && result.stage && result.list &&
     result.locationRows >= 8 && result.statePaths === 51 &&
+    result.labelHaloLayers >= 8 && result.labelHaloLayers === result.labelTextLayers && result.paintOrderLabels === 0 &&
     result.width > 400 && result.height > 240 &&
     !result.documentOverflowX && !result.documentOverflowY &&
     result.mcpBridge && result.mcpUnauthorizedBlocked && result.mcpLoopback &&
     result.workspaceModesFunctional && result.mcpProposalStaged && result.mcpProposalAppliedByUser &&
-    result.customPinProposalStaged && result.customPinEmbedded && result.customPinExports &&
+    result.customPinProposalStaged && result.customPinEmbedded && result.customPinExports && result.svgLabelExportLayered &&
     result.ornlPaletteAvailable;
   console.log(`USA_MAP_STUDIO_SMOKE ${JSON.stringify({ passed, ...result })}`);
   app.exit(passed ? 0 : 1);

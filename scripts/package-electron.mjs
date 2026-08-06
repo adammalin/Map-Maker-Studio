@@ -13,7 +13,7 @@ const arch = target === "mac" ? (process.arch === "arm64" ? "arm64" : "x64") : "
 const outputs = await packager({
   dir: process.cwd(),
   name: "USA Map Studio",
-  appVersion: "0.3.0",
+  appVersion: "0.3.1",
   platform,
   arch,
   out: path.join(process.cwd(), "out"),
