@@ -18,6 +18,16 @@ USA Map Studio is a local-first Electron desktop editor for building accurate ma
 
 The interface deliberately follows the clear hierarchy and square-edged desktop design language of OrgChart Studio while remaining a separate product.
 
+Current application version: **0.2.1**.
+
+## Documentation
+
+- [USA Map Studio User Guide (PDF)](docs/USA-Map-Studio-User-Guide.pdf) - installation commands, workspace modes, CSV import, custom SVG pins, ORNL color swatches, exports, and local MCP control.
+- [Project file format](docs/PROJECT-FORMAT.md) - schema version 2, embedded custom pins, validation, and version 1 migration.
+- [Local MCP integration](docs/MCP.md) - security model, setup, client configuration, and the review-first workflow.
+
+The committed PDF intentionally lives under `docs/` so the repository, setup scripts, and packaged desktop app all resolve the same guide.
+
 ## macOS setup - no signed installer
 
 Requirements: macOS 12 or later and internet access during first setup. The script uses an existing compatible Node.js runtime or downloads a private pinned copy into `.runtime`.
