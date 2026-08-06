@@ -50,7 +50,7 @@ Array order controls pin stacking. Every location references exactly one layer b
 
 ## Shared pin style
 
-`sharedPinStyle` contains `enabled`, `pinType`, `customPinId`, `pinColor`, and `pinSize`. When `enabled` is `true`, this project-wide style overrides the corresponding saved fields on every location at render and export time. This guarantees that separate data layers can look identical. When `false`, each location's saved pin style is used.
+`sharedPinStyle` contains `enabled`, `pinType`, `customPinId`, `pinColor`, and `pinSize`. When `enabled` is `true`, the inspector is in **All pins** mode and this project-wide style overrides the corresponding saved fields on every location at render and export time. This is the default for new projects and guarantees that separate data layers can look identical. When the user switches to **This pin**, the app first copies the current shared appearance into every location, then sets `enabled` to `false`; later type, custom SVG, color, and size edits affect only the selected location without changing the other pins.
 
 ## Custom SVG pin library
 
@@ -90,4 +90,4 @@ Atomic replacement writes a private temporary file beside the destination and re
 
 ## Compatibility
 
-Version 0.4.1 writes schema version 4 and also reads schema versions 1 through 3. Version 1 and 2 projects migrate with one visible `Layer 1 - Locations`; every existing location is assigned to it. Version 1 also receives an empty `customPins` library and `null` custom-pin references. Locations from schema versions 1 through 3 default to `visible: true` when that field is absent. The app rejects unrelated JSON, unsupported schema versions, missing core objects, invalid coordinates, duplicate layer or custom-pin IDs, dangling layer or custom-pin references, and malformed required fields instead of silently dropping data.
+Version 0.5.0 writes schema version 4 and also reads schema versions 1 through 3. Canvas zoom and pan are editor-view state rather than project data, so they do not alter rendered coordinates or the portable JSON schema. Version 1 and 2 projects migrate with one visible `Layer 1 - Locations`; every existing location is assigned to it. Version 1 also receives an empty `customPins` library and `null` custom-pin references. Locations from schema versions 1 through 3 default to `visible: true` when that field is absent. The app rejects unrelated JSON, unsupported schema versions, missing core objects, invalid coordinates, duplicate layer or custom-pin IDs, dangling layer or custom-pin references, and malformed required fields instead of silently dropping data.

@@ -82,7 +82,7 @@ def footer(pdf, page_number):
     pdf.rect(0, 0, PAGE_W, 48, stroke=0, fill=1)
     pdf.setFillColor(WHITE)
     pdf.setFont("Helvetica", 7.2)
-    pdf.drawString(40, 28, "USA Map Studio v0.4.1 | Local desktop quick start | August 6, 2026")
+    pdf.drawString(40, 28, "USA Map Studio v0.5.0 | Local desktop quick start | August 6, 2026")
     pdf.drawRightString(572, 28, f"PAGE {page_number} OF 6")
 
 
@@ -146,7 +146,7 @@ def build_pdf(output):
     pdf = canvas.Canvas(str(output), pagesize=letter, pageCompression=1)
     pdf.setTitle("USA Map Studio User Guide")
     pdf.setAuthor("USA Map Studio")
-    pdf.setSubject("macOS and Windows setup, map layers, CSV import, custom SVG pins, ORNL color swatches, exports, and local MCP control")
+    pdf.setSubject("macOS and Windows setup, canvas navigation, map layers, CSV import, custom SVG pins, ORNL color swatches, exports, and local MCP control")
 
     page_header(pdf, "No signed installer required | macOS and Windows", "Install from source.", "One verified script prepares, builds, checks, and starts the local desktop app.", 1)
     label(pdf, "Before you begin", 40, 614)
@@ -178,13 +178,13 @@ def build_pdf(output):
         pdf.setStrokeColor(BORDER)
         pdf.rect(40, 314, 532, 320, stroke=1, fill=0)
     step_card(pdf, "1", "MAP EDITOR", "Select pins on the largest canvas and refine coordinates, labels, symbols, and colors.", 40, 190, 120, 96)
-    step_card(pdf, "2", "LOCATIONS", "Search, import, add, hide, show, delete, and assign individual places to a layer.", 174, 190, 120, 96, SOFT_NAVY, NAVY)
+    step_card(pdf, "2", "LOCATIONS", "Choose All pins (default) or This pin, then search, import, hide, show, and organize places.", 174, 190, 120, 96, SOFT_NAVY, NAVY)
     step_card(pdf, "3", "LAYERS", "Name, reorder, show, hide, and count separate location groups. Set one shared pin style.", 308, 190, 120, 96, PALE, BLUE)
     step_card(pdf, "4", "MAP STYLE", "Control fills, boundaries, county lines, label halo, abbreviations, and legend.", 442, 190, 130, 96, SOFT_GREEN, GREEN)
     pdf.setFillColor(NAVY)
     pdf.rect(40, 77, 532, 86, stroke=0, fill=1)
-    label(pdf, "Map controls", 56, 139, ENERGY)
-    wrapped(pdf, "Use the mouse wheel to zoom, drag the map background to pan, and choose Fit view to reset. Drag a pin for a visual adjustment; enter or resolve coordinates for an exact location. Editor selection outlines never appear in an export.", 56, 119, 500, font="Helvetica-Bold", size=8.2, leading=11.2, color=WHITE)
+    label(pdf, "Map controls and shortcuts", 56, 139, ENERGY)
+    wrapped(pdf, "Hold Space and drag anywhere to pan; drag a pin without Space to move it. Scroll at the pointer or use -/+ to zoom; 0 Fits and 1 returns to 100%. The bottom-right Navigator shows and recenters the visible region. Project keys: Cmd/Ctrl+S Save, Cmd/Ctrl+O Open, Cmd/Ctrl+N New, and Cmd/Ctrl+Z Undo. Cmd/Ctrl+Shift+Z or Ctrl+Y Redo; / searches; ? opens the keyboard reference.", 56, 119, 500, font="Helvetica-Bold", size=7.8, leading=10.3, color=WHITE)
     footer(pdf, 2)
     pdf.showPage()
 
@@ -194,7 +194,7 @@ def build_pdf(output):
     code_box(pdf, "Or supply exact coordinates", ["city,state,latitude,longitude", "Denver,CO,39.7392,-104.9903"], 318, 508, 254, 82, NAVY)
     label(pdf, "Optional visual fields", 40, 478)
     y = bullet(pdf, "Visibility and labels", "visible hides or shows the complete location; show_label, label_color, and label_position control only its label.", 40, 456, 250)
-    y = bullet(pdf, "Pins", "pin_type (pin, circle, square, diamond, or star), pin_color, and pin_size from 6 through 40. Custom SVG pins are added in the inspector.", 40, y - 5, 250, BLUE)
+    y = bullet(pdf, "Pins", "All pins is the default editing scope. Switch to This pin for one location. Type, color, size, and custom SVG choices follow that scope.", 40, y - 5, 250, BLUE)
     bullet(pdf, "Additional data", "notes plus any custom columns. Unknown columns stay in customData and return with the project.", 40, y - 58, 250, FORGE)
     y2 = bullet(pdf, "Choose the target layer", "The import summary separates ready rows from issues. Choose a named layer, then Add or Replace target layer. Other layers are untouched.", 318, 456, 254)
     y2 = bullet(pdf, "Save and autosave", "Save project chooses a .usmap.json path. Every later project change atomically updates that file and an internal recovery JSON.", 318, y2 - 5, 254, BLUE)
@@ -251,8 +251,8 @@ def build_pdf(output):
 
     page_header(pdf, "Custom visual system | portable project assets", "Import a pin. Reuse the palette.", "SVG artwork stays with the project, and named ORNL swatches stay one click away.", 6)
     label(pdf, "Custom SVG pin workflow", 40, 614)
-    step_card(pdf, "1", "IMPORT", "Select a location, choose Import custom SVG pin, and select a vector-only .svg file up to 500 KB.", 40, 508, 166, 82)
-    step_card(pdf, "2", "SHARE", "Use Layers > Shared pin style to guarantee the same SVG, color, and size across every layer.", 223, 508, 166, 82, SOFT_NAVY, NAVY)
+    step_card(pdf, "1", "IMPORT", "Choose All pins or This pin, select Import custom SVG pin, and open a vector-only .svg file up to 500 KB.", 40, 508, 166, 82)
+    step_card(pdf, "2", "SHARE", "Keep All pins selected to guarantee the same SVG, color, and size everywhere; use This pin for an exception.", 223, 508, 166, 82, SOFT_NAVY, NAVY)
     step_card(pdf, "3", "SAVE", "The sanitized SVG is stored inside .usmap.json. Move or share that one project file without losing the pin artwork.", 406, 508, 166, 82, PALE, BLUE)
     palette_row(pdf, "Primary", [
         ("ORNL Green", "#00662C", GREEN),

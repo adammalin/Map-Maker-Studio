@@ -345,6 +345,68 @@ async function runSmoke(window) {
         !document.querySelector('.location-panel'),
     };
   })()`);
+  const navigationInitial = await window.webContents.executeJavaScript(`(() => ({
+    minimap: Boolean(document.querySelector('[data-testid="map-minimap"]')),
+    viewport: Boolean(document.querySelector('[data-testid="map-minimap-viewport"]')),
+    zoom: document.querySelector('[data-testid="zoom-status"] strong')?.textContent,
+    controls: ['zoom-out', 'zoom-in', 'zoom-actual', 'zoom-fit', 'keyboard-shortcuts']
+      .every((id) => Boolean(document.querySelector('[data-testid="' + id + '"]'))),
+  }))()`);
+  await window.webContents.executeJavaScript(`document.querySelector('[data-testid="zoom-in"]')?.click()`);
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  const zoomedByButton = await window.webContents.executeJavaScript(`(() => ({
+    zoom: document.querySelector('[data-testid="zoom-status"] strong')?.textContent,
+    viewportWidth: Number(document.querySelector('[data-testid="map-minimap-viewport"]')?.getAttribute('width')),
+  }))()`);
+  await window.webContents.executeJavaScript(`document.body.dispatchEvent(new KeyboardEvent('keydown', { key: '0', code: 'Digit0', bubbles: true }))`);
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  const fitByKeyboard = await window.webContents.executeJavaScript(`document.querySelector('[data-testid="zoom-status"] strong')?.textContent`);
+  const minimapTransformBefore = await window.webContents.executeJavaScript(`document.querySelector('[data-testid="map-viewport-transform"]')?.getAttribute('transform')`);
+  await window.webContents.executeJavaScript(`(() => {
+    const minimap = document.querySelector('[data-testid="map-minimap"] svg');
+    if (!minimap) return;
+    const bounds = minimap.getBoundingClientRect();
+    const originalCapture = minimap.setPointerCapture.bind(minimap);
+    minimap.setPointerCapture = () => {};
+    minimap.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 46, button: 0, buttons: 1, clientX: bounds.x + bounds.width * 0.25, clientY: bounds.y + bounds.height * 0.25 }));
+    minimap.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 46, button: 0, buttons: 0, clientX: bounds.x + bounds.width * 0.25, clientY: bounds.y + bounds.height * 0.25 }));
+    minimap.setPointerCapture = originalCapture;
+  })()`);
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  const minimapTransformAfter = await window.webContents.executeJavaScript(`document.querySelector('[data-testid="map-viewport-transform"]')?.getAttribute('transform')`);
+  await window.webContents.executeJavaScript(`document.querySelector('[data-testid="zoom-fit"]')?.click()`);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  await window.webContents.executeJavaScript(`document.body.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true }))`);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const spaceReady = await window.webContents.executeJavaScript(`document.querySelector('[data-testid="map-svg"]')?.classList.contains('is-space-pan-ready')`);
+  const spacePanTransformBefore = await window.webContents.executeJavaScript(`document.querySelector('[data-testid="map-viewport-transform"]')?.getAttribute('transform')`);
+  await window.webContents.executeJavaScript(`(() => {
+    const svg = document.querySelector('[data-testid="map-svg"]');
+    const pin = document.querySelector('.map-location');
+    if (!svg || !pin) return;
+    const bounds = pin.getBoundingClientRect();
+    const originalCapture = svg.setPointerCapture.bind(svg);
+    svg.setPointerCapture = () => {};
+    pin.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 47, button: 0, buttons: 1, clientX: bounds.x + bounds.width / 2, clientY: bounds.y + bounds.height / 2 }));
+    svg.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 47, button: 0, buttons: 1, clientX: bounds.x + bounds.width / 2 + 42, clientY: bounds.y + bounds.height / 2 + 24 }));
+    svg.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 47, button: 0, buttons: 0, clientX: bounds.x + bounds.width / 2 + 42, clientY: bounds.y + bounds.height / 2 + 24 }));
+    svg.setPointerCapture = originalCapture;
+  })()`);
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  const spacePanTransformAfter = await window.webContents.executeJavaScript(`document.querySelector('[data-testid="map-viewport-transform"]')?.getAttribute('transform')`);
+  await window.webContents.executeJavaScript(`document.body.dispatchEvent(new KeyboardEvent('keyup', { key: ' ', code: 'Space', bubbles: true }))`);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const spaceReleased = await window.webContents.executeJavaScript(`!document.querySelector('[data-testid="map-svg"]')?.classList.contains('is-space-pan-ready')`);
+  await window.webContents.executeJavaScript(`document.body.dispatchEvent(new KeyboardEvent('keydown', { key: '?', code: 'Slash', shiftKey: true, bubbles: true }))`);
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  const shortcutsOpened = await window.webContents.executeJavaScript(`Boolean(document.querySelector('[data-testid="keyboard-shortcuts-dialog"]'))`);
+  await window.webContents.executeJavaScript(`document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }))`);
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  const shortcutsClosed = await window.webContents.executeJavaScript(`!document.querySelector('[data-testid="keyboard-shortcuts-dialog"]')`);
+  result.canvasNavigation = navigationInitial.minimap && navigationInitial.viewport && navigationInitial.zoom === '100%' && navigationInitial.controls &&
+    zoomedByButton.zoom === '120%' && zoomedByButton.viewportWidth > 0 && zoomedByButton.viewportWidth < 1200 &&
+    fitByKeyboard === '100%' && minimapTransformBefore !== minimapTransformAfter &&
+    spaceReady && spacePanTransformBefore !== spacePanTransformAfter && spaceReleased && shortcutsOpened && shortcutsClosed;
   await window.webContents.executeJavaScript(`document.querySelector('[data-workspace-mode="locations"]')?.click()`);
   await new Promise((resolve) => setTimeout(resolve, 80));
   const locationsMode = await window.webContents.executeJavaScript(`(() => ({
@@ -355,6 +417,44 @@ async function runSmoke(window) {
     rows: document.querySelectorAll('.location-row').length,
     overflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth,
   }))()`);
+  const pinScopeInitial = await window.webContents.executeJavaScript(`(() => ({
+    allPressed: document.querySelector('[data-testid="pin-scope-all"]')?.getAttribute('aria-pressed'),
+    singlePressed: document.querySelector('[data-testid="pin-scope-single"]')?.getAttribute('aria-pressed'),
+    note: document.querySelector('.shared-style-note')?.textContent,
+    markerColors: [...document.querySelectorAll('.location-row__marker')].map((marker) => getComputedStyle(marker).backgroundColor),
+  }))()`);
+  await window.webContents.executeJavaScript(`document.querySelector('[data-testid="pin-scope-single"]')?.click()`);
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  const pinScopeSingle = await window.webContents.executeJavaScript(`(() => ({
+    allPressed: document.querySelector('[data-testid="pin-scope-all"]')?.getAttribute('aria-pressed'),
+    singlePressed: document.querySelector('[data-testid="pin-scope-single"]')?.getAttribute('aria-pressed'),
+    note: document.querySelector('.shared-style-note')?.textContent,
+  }))()`);
+  await window.webContents.executeJavaScript(`(() => {
+    const input = document.querySelector('input[aria-label="Color hex color"]');
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    if (input && setter) {
+      setter.call(input, '#fe5000');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  })()`);
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const pinScopeEdited = await window.webContents.executeJavaScript(`(() => ({
+    markerColors: [...document.querySelectorAll('.location-row__marker')].map((marker) => getComputedStyle(marker).backgroundColor),
+  }))()`);
+  await window.webContents.executeJavaScript(`document.querySelector('[data-testid="pin-scope-all"]')?.click()`);
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const pinScopeAll = await window.webContents.executeJavaScript(`(() => ({
+    allPressed: document.querySelector('[data-testid="pin-scope-all"]')?.getAttribute('aria-pressed'),
+    singlePressed: document.querySelector('[data-testid="pin-scope-single"]')?.getAttribute('aria-pressed'),
+    markerColors: [...document.querySelectorAll('.location-row__marker')].map((marker) => getComputedStyle(marker).backgroundColor),
+  }))()`);
+  result.pinEditingScope = pinScopeInitial.allPressed === "true" && pinScopeInitial.singlePressed === "false" &&
+    new Set(pinScopeInitial.markerColors).size === 1 && /editing all pins/i.test(pinScopeInitial.note || "") &&
+    pinScopeSingle.allPressed === "false" && pinScopeSingle.singlePressed === "true" && /editing only this pin/i.test(pinScopeSingle.note || "") &&
+    pinScopeEdited.markerColors[0] !== pinScopeEdited.markerColors[1] &&
+    pinScopeAll.allPressed === "true" && pinScopeAll.singlePressed === "false" && new Set(pinScopeAll.markerColors).size === 1;
   const locationVisibilityBefore = await window.webContents.executeJavaScript(`(() => ({
     pins: document.querySelectorAll('.map-location').length,
     buttons: document.querySelectorAll('.location-row__visibility').length,
@@ -671,7 +771,7 @@ async function runSmoke(window) {
     saveStatus: document.querySelector('.save-status')?.textContent,
     pendingProposal: Boolean(document.querySelector('[data-testid="ai-proposal-banner"]')),
   }))()`);
-  result.autosaveRestoredOnLaunch = autosaveRestoredState.version === "v0.4.1" &&
+  result.autosaveRestoredOnLaunch = autosaveRestoredState.version === "v0.5.0" &&
     autosaveRestoredState.locationCount === String(currentProject.locations.length) &&
     autosaveRestoredState.layerCount === "2" &&
     autosaveRestoredState.customPinCount === currentProject.locations.length &&
@@ -696,7 +796,7 @@ async function runSmoke(window) {
     result.width > 400 && result.height > 240 &&
     !result.documentOverflowX && !result.documentOverflowY &&
     result.mcpBridge && result.mcpUnauthorizedBlocked && result.mcpLoopback &&
-    result.workspaceModesFunctional && result.layerWorkspaceFunctional && result.locationVisibility && result.locationRowDelete && result.mcpProposalStaged && result.mcpProposalAppliedByUser &&
+    result.canvasNavigation && result.workspaceModesFunctional && result.layerWorkspaceFunctional && result.pinEditingScope && result.locationVisibility && result.locationRowDelete && result.mcpProposalStaged && result.mcpProposalAppliedByUser &&
     result.customPinProposalStaged && result.customPinEmbedded && result.customPinAppliedToAll &&
     result.customPinDeleteControl && result.customPinExports && result.exportLayerGroups === 2 && result.svgLabelExportLayered &&
     result.ornlPaletteAvailable && result.jsonAutosave && result.autosaveRestoredOnLaunch;

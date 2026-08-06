@@ -105,10 +105,10 @@ export function LayerInspector({
         </section>
         <section className="form-section form-section--accent">
           <h3>Shared pin style</h3>
-          <label className="toggle-row"><span>Use one pin across all layers</span><input data-testid="shared-pin-style-toggle" type="checkbox" checked={sharedPinStyle.enabled} onChange={(event) => onUpdateSharedPinStyle({ enabled: event.target.checked })} /></label>
-          <p className="form-hint">Turn this on when every layer must use exactly the same symbol, color, and size.</p>
+          <label className="toggle-row"><span>Edit and display one style across all pins</span><input data-testid="shared-pin-style-toggle" type="checkbox" checked={sharedPinStyle.enabled} onChange={(event) => onUpdateSharedPinStyle({ enabled: event.target.checked })} /></label>
+          <p className="form-hint">All pins is the default. Turn it off to preserve the current appearance and edit locations individually.</p>
           <label><span>Type</span>
-            <select value={typeValue} onChange={(event) => {
+            <select disabled={!sharedPinStyle.enabled} value={typeValue} onChange={(event) => {
               const next = event.target.value;
               if (next.startsWith("custom:")) onUpdateSharedPinStyle({ customPinId: next.slice(7) });
               else onUpdateSharedPinStyle({ pinType: next as SharedPinStyle["pinType"], customPinId: null });
@@ -119,8 +119,8 @@ export function LayerInspector({
               {customPins.length ? <optgroup label="Custom SVG pins">{customPins.map((design) => <option key={design.id} value={`custom:${design.id}`}>{design.name}</option>)}</optgroup> : null}
             </select>
           </label>
-          <ColorField label="Color" value={sharedPinStyle.pinColor} onChange={(pinColor) => onUpdateSharedPinStyle({ pinColor })} />
-          <label><span>Size <em>{sharedPinStyle.pinSize}px</em></span><input type="range" min="6" max="40" value={sharedPinStyle.pinSize} onChange={(event) => onUpdateSharedPinStyle({ pinSize: Number(event.target.value) })} /></label>
+          <ColorField disabled={!sharedPinStyle.enabled} label="Color" value={sharedPinStyle.pinColor} onChange={(pinColor) => onUpdateSharedPinStyle({ pinColor })} />
+          <label><span>Size <em>{sharedPinStyle.pinSize}px</em></span><input disabled={!sharedPinStyle.enabled} type="range" min="6" max="40" value={sharedPinStyle.pinSize} onChange={(event) => onUpdateSharedPinStyle({ pinSize: Number(event.target.value) })} /></label>
           <div className="success-notice"><MapPin size={17} weight="fill" /> The shared style is stored in project JSON and used by SVG, PNG, and PowerPoint exports.</div>
         </section>
         <button type="button" className="button button--danger button--full" disabled={layers.length === 1} onClick={onRemoveLayer}><Trash size={16} /> Delete layer and its locations</button>

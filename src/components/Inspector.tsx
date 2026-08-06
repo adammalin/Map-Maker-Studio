@@ -22,6 +22,8 @@ interface InspectorProps {
   layers: MapLayer[];
   sharedPinStyle: SharedPinStyle;
   onUpdateLocation(patch: Partial<MapLocation>): void;
+  onUpdateSharedPinStyle(patch: Partial<SharedPinStyle>): void;
+  onSetPinEditingScope(scope: "all" | "single"): void;
   onUpdateMap(patch: Partial<MapSettings>): void;
   onDuplicateLocation(): void;
   onRemoveLocation(): void;
@@ -77,6 +79,8 @@ export function Inspector({
   layers,
   sharedPinStyle,
   onUpdateLocation,
+  onUpdateSharedPinStyle,
+  onSetPinEditingScope,
   onUpdateMap,
   onDuplicateLocation,
   onRemoveLocation,
@@ -93,6 +97,7 @@ export function Inspector({
       ? customPins.find((design) => design.id === effectiveStyle.customPinId) ?? null
       : null;
     const pinTypeValue = selectedCustomPin ? `custom:${selectedCustomPin.id}` : effectiveStyle.pinType;
+    const updatePinStyle = sharedPinStyle.enabled ? onUpdateSharedPinStyle : onUpdateLocation;
     return (
       <aside className="inspector" aria-label="Location inspector" data-testid="location-inspector">
         <div className="inspector__heading">
@@ -137,12 +142,20 @@ export function Inspector({
           </section>
           <section className="form-section">
             <h3>Pin</h3>
-            {sharedPinStyle.enabled ? <p className="shared-style-note"><strong>Shared pin style is on.</strong> Every layer uses the same pin. Change it in the Layers workspace.</p> : null}
+            <div className="pin-edit-scope" role="group" aria-label="Pin editing scope">
+              <button type="button" data-testid="pin-scope-all" className={sharedPinStyle.enabled ? "is-active" : ""} aria-pressed={sharedPinStyle.enabled} onClick={() => onSetPinEditingScope("all")}>All pins</button>
+              <button type="button" data-testid="pin-scope-single" className={sharedPinStyle.enabled ? "" : "is-active"} aria-pressed={!sharedPinStyle.enabled} onClick={() => onSetPinEditingScope("single")}>This pin</button>
+            </div>
+            <p className="shared-style-note">
+              {sharedPinStyle.enabled
+                ? <><strong>Editing all pins.</strong> Type, color, and size changes apply to every location.</>
+                : <><strong>Editing only this pin.</strong> Other locations keep their current appearance.</>}
+            </p>
             <label><span>Type</span>
-              <select disabled={sharedPinStyle.enabled} value={pinTypeValue} onChange={(event) => {
+              <select value={pinTypeValue} onChange={(event) => {
                 const next = event.target.value;
-                if (next.startsWith("custom:")) onUpdateLocation({ customPinId: next.slice(7) });
-                else onUpdateLocation({ pinType: next as MapLocation["pinType"], customPinId: null });
+                if (next.startsWith("custom:")) updatePinStyle({ customPinId: next.slice(7) });
+                else updatePinStyle({ pinType: next as MapLocation["pinType"], customPinId: null });
               }}>
                 <optgroup label="Built-in pins">
                   <option value="pin">Map pin</option><option value="circle">Circle</option><option value="square">Square</option><option value="diamond">Diamond</option><option value="star">Star</option>
@@ -154,8 +167,8 @@ export function Inspector({
                 ) : null}
               </select>
             </label>
-            <ColorField disabled={sharedPinStyle.enabled} label="Color" value={effectiveStyle.pinColor} onChange={(pinColor) => onUpdateLocation({ pinColor })} />
-            <label><span>Size <em>{effectiveStyle.pinSize}px</em></span><input disabled={sharedPinStyle.enabled} type="range" min="6" max="40" value={effectiveStyle.pinSize} onChange={(event) => onUpdateLocation({ pinSize: Number(event.target.value) })} /></label>
+            <ColorField label="Color" value={effectiveStyle.pinColor} onChange={(pinColor) => updatePinStyle({ pinColor })} />
+            <label><span>Size <em>{effectiveStyle.pinSize}px</em></span><input type="range" min="6" max="40" value={effectiveStyle.pinSize} onChange={(event) => updatePinStyle({ pinSize: Number(event.target.value) })} /></label>
             <input
               ref={svgInputRef}
               className="sr-only"

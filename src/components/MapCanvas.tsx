@@ -1,4 +1,4 @@
-import { forwardRef, useMemo, useRef } from "react";
+import { forwardRef, useMemo, useRef, useState } from "react";
 import type { Feature, Geometry } from "geojson";
 import { STATE_BY_FIPS } from "../data/state-metadata";
 import { customPinTransform, scopedCustomPinInnerMarkup } from "../lib/custom-pin";
@@ -6,6 +6,7 @@ import { effectivePinStyle, svgLayerId, visibleLocations } from "../lib/layers";
 import { countyBoundaries, mapPath as path, projection, stateBoundaries, states } from "../lib/map-geometry";
 import type { CustomPinDesign, MapLocation, UsaMapProject } from "../types";
 import type { EffectivePinStyle } from "../lib/layers";
+import { MAP_CANVAS_HEIGHT, MAP_CANVAS_WIDTH, MAP_TRANSFORM_CENTER, clampMapZoom, zoomViewportAt } from "../lib/viewport";
 
 interface MapCanvasProps {
   project: UsaMapProject;
@@ -13,6 +14,7 @@ interface MapCanvasProps {
   selectedStateFips: string | null;
   zoom: number;
   pan: { x: number; y: number };
+  spacePressed: boolean;
   onSelectLocation(id: string | null): void;
   onSelectState(fips: string | null): void;
   onMoveLocation(id: string, latitude: number, longitude: number): void;
@@ -82,6 +84,7 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(function MapC
     selectedStateFips,
     zoom,
     pan,
+    spacePressed,
     onSelectLocation,
     onSelectState,
     onMoveLocation,
@@ -92,6 +95,8 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(function MapC
 ) {
   const draggingLocation = useRef<string | null>(null);
   const panning = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number } | null>(null);
+  const suppressNextClick = useRef(false);
+  const [isPanning, setIsPanning] = useState(false);
   const projectedLayers = useMemo(() => project.layers.map((layer) => ({
     layer,
     locations: layer.visible
@@ -111,38 +116,40 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(function MapC
     [project.customPins],
   );
 
-  const groupTransform = `translate(${pan.x} ${pan.y}) translate(600 390) scale(${zoom}) translate(-600 -390)`;
+  const groupTransform = `translate(${pan.x} ${pan.y}) translate(${MAP_TRANSFORM_CENTER.x} ${MAP_TRANSFORM_CENTER.y}) scale(${zoom}) translate(${-MAP_TRANSFORM_CENTER.x} ${-MAP_TRANSFORM_CENTER.y})`;
 
   function pointerToMap(event: React.PointerEvent<SVGSVGElement>): [number, number] {
     const bounds = event.currentTarget.getBoundingClientRect();
-    const displayX = (event.clientX - bounds.left) * (1200 / bounds.width);
-    const displayY = (event.clientY - bounds.top) * (720 / bounds.height);
+    const displayX = (event.clientX - bounds.left) * (MAP_CANVAS_WIDTH / bounds.width);
+    const displayY = (event.clientY - bounds.top) * (MAP_CANVAS_HEIGHT / bounds.height);
     return [
-      (displayX - pan.x - 600 * (1 - zoom)) / zoom,
-      (displayY - pan.y - 390 * (1 - zoom)) / zoom,
+      (displayX - pan.x - MAP_TRANSFORM_CENTER.x * (1 - zoom)) / zoom,
+      (displayY - pan.y - MAP_TRANSFORM_CENTER.y * (1 - zoom)) / zoom,
     ];
   }
 
   function handlePointerMove(event: React.PointerEvent<SVGSVGElement>) {
-    if (draggingLocation.current) {
-      const coordinate = projection.invert?.(pointerToMap(event));
-      if (coordinate) onMoveLocation(draggingLocation.current, coordinate[1], coordinate[0]);
-      return;
-    }
     if (panning.current?.pointerId === event.pointerId) {
       const bounds = event.currentTarget.getBoundingClientRect();
-      const scaleX = 1200 / bounds.width;
-      const scaleY = 720 / bounds.height;
+      const scaleX = MAP_CANVAS_WIDTH / bounds.width;
+      const scaleY = MAP_CANVAS_HEIGHT / bounds.height;
       onPanChange({
         x: panning.current.originX + (event.clientX - panning.current.startX) * scaleX,
         y: panning.current.originY + (event.clientY - panning.current.startY) * scaleY,
       });
+      return;
+    }
+    if (draggingLocation.current) {
+      const coordinate = projection.invert?.(pointerToMap(event));
+      if (coordinate) onMoveLocation(draggingLocation.current, coordinate[1], coordinate[0]);
     }
   }
 
   function stopPointerAction(event: React.PointerEvent<SVGSVGElement>) {
     draggingLocation.current = null;
     panning.current = null;
+    setIsPanning(false);
+    window.setTimeout(() => { suppressNextClick.current = false; }, 0);
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
@@ -151,7 +158,7 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(function MapC
   return (
     <svg
       ref={forwardedRef}
-      className="map-svg"
+      className={`map-svg${spacePressed ? " is-space-pan-ready" : ""}${isPanning ? " is-panning" : ""}`}
       data-testid="map-svg"
       viewBox="0 0 1200 720"
       role="img"
@@ -159,16 +166,45 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(function MapC
       onPointerMove={handlePointerMove}
       onPointerUp={stopPointerAction}
       onPointerCancel={stopPointerAction}
+      onPointerDownCapture={(event) => {
+        if (!spacePressed || event.button !== 0) return;
+        event.preventDefault();
+        event.stopPropagation();
+        event.currentTarget.setPointerCapture(event.pointerId);
+        draggingLocation.current = null;
+        panning.current = {
+          pointerId: event.pointerId,
+          startX: event.clientX,
+          startY: event.clientY,
+          originX: pan.x,
+          originY: pan.y,
+        };
+        suppressNextClick.current = true;
+        setIsPanning(true);
+      }}
+      onClickCapture={(event) => {
+        if (!suppressNextClick.current) return;
+        event.preventDefault();
+        event.stopPropagation();
+        suppressNextClick.current = false;
+      }}
       onWheel={(event) => {
         event.preventDefault();
-        onZoomChange(Math.min(2.6, Math.max(0.72, zoom + (event.deltaY < 0 ? 0.1 : -0.1))));
+        const bounds = event.currentTarget.getBoundingClientRect();
+        const anchor = {
+          x: (event.clientX - bounds.left) * (MAP_CANVAS_WIDTH / bounds.width),
+          y: (event.clientY - bounds.top) * (MAP_CANVAS_HEIGHT / bounds.height),
+        };
+        const next = zoomViewportAt({ zoom, pan }, clampMapZoom(zoom * Math.exp(-event.deltaY * 0.0015)), anchor);
+        onPanChange(next.pan);
+        onZoomChange(next.zoom);
       }}
     >
       <title id="map-title">{project.map.title || project.project.name}</title>
       <desc id="map-description">United States map with {mappedLocations.length} visible plotted locations across {project.layers.filter((layer) => layer.visible).length} visible layers.</desc>
       <rect
-        width="1200"
-        height="720"
+        width={MAP_CANVAS_WIDTH}
+        height={MAP_CANVAS_HEIGHT}
         fill={project.map.backgroundColor}
         data-pan-surface="true"
         onPointerDown={(event) => {
@@ -180,6 +216,7 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(function MapC
             originX: pan.x,
             originY: pan.y,
           };
+          setIsPanning(true);
           onSelectLocation(null);
           onSelectState(null);
         }}
@@ -192,7 +229,7 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(function MapC
           {project.map.subtitle}
         </text>
       ) : null}
-      <g transform={groupTransform}>
+      <g transform={groupTransform} data-testid="map-viewport-transform">
         <g aria-label="States">
           {states.features.map((state) => {
             const fips = state.properties.STATEFP;

@@ -568,7 +568,8 @@ input.sr-only[type="file"] {
 }
 
 .toolbar-actions,
-.toolbar-actions__history {
+.toolbar-actions__history,
+.viewport-controls {
   display: flex;
   align-items: center;
 }
@@ -579,6 +580,42 @@ input.sr-only[type="file"] {
 
 .toolbar-actions__history {
   gap: 0;
+}
+
+.viewport-controls {
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  background: var(--white);
+}
+
+.viewport-controls button {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 0;
+  border-right: 1px solid var(--border-subtle);
+  background: var(--white);
+  color: var(--navy);
+  padding: 0;
+}
+
+.viewport-controls button:last-child {
+  border-right: 0;
+}
+
+.viewport-controls button:hover:not(:disabled) {
+  background: var(--surface-green);
+  color: var(--green);
+}
+
+.viewport-controls button:disabled {
+  color: #aab5b2;
+}
+
+.viewport-controls button span {
+  font-size: 8px;
+  font-weight: 900;
 }
 
 .toolbar-actions__history .button:first-child {
@@ -1039,6 +1076,20 @@ input.sr-only[type="file"] {
   user-select: none;
 }
 
+.map-svg [data-pan-surface="true"] {
+  cursor: grab;
+}
+
+.map-svg.is-space-pan-ready,
+.map-svg.is-space-pan-ready * {
+  cursor: grab !important;
+}
+
+.map-svg.is-panning,
+.map-svg.is-panning * {
+  cursor: grabbing !important;
+}
+
 .map-state {
   cursor: pointer;
   transition: filter 120ms ease;
@@ -1054,6 +1105,51 @@ input.sr-only[type="file"] {
 
 .map-location:active {
   cursor: grabbing;
+}
+
+.map-minimap {
+  position: absolute;
+  z-index: 4;
+  right: 14px;
+  bottom: 34px;
+  width: 184px;
+  overflow: hidden;
+  border: 1px solid #aebcb7;
+  background: var(--white);
+  box-shadow: 0 9px 28px rgb(0 45 50 / 20%);
+}
+
+.map-minimap__heading {
+  display: flex;
+  height: 25px;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--white);
+  color: var(--navy);
+  padding: 0 8px;
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.map-minimap__heading strong {
+  color: var(--green);
+}
+
+.map-minimap svg {
+  display: block;
+  width: 100%;
+  aspect-ratio: 5 / 3;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.map-minimap__viewport {
+  fill: rgb(0 69 77 / 10%);
+  stroke: var(--spark);
+  stroke-width: 2;
 }
 
 .map-stage__badge {
@@ -1209,6 +1305,40 @@ input.sr-only[type="file"] {
   width: 16px;
   height: 16px;
   accent-color: var(--green);
+}
+
+.pin-edit-scope {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  border: 1px solid #b9c8c4;
+  background: #e7ecea;
+  padding: 4px;
+}
+
+.pin-edit-scope button {
+  min-height: 32px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #52625f;
+  font: inherit;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.pin-edit-scope button:hover {
+  background: rgb(255 255 255 / 66%);
+  color: var(--navy);
+}
+
+.pin-edit-scope button.is-active {
+  border-color: var(--green);
+  background: var(--white);
+  color: var(--green);
+  box-shadow: inset 0 -3px 0 var(--energy);
 }
 
 .field-row {
@@ -1774,6 +1904,49 @@ input.sr-only[type="file"] {
   line-height: 1.5;
 }
 
+.dialog.shortcut-dialog {
+  width: min(610px, 94vw);
+  border-top-color: var(--green);
+}
+
+.shortcut-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: var(--border-subtle);
+  padding: 1px;
+}
+
+.shortcut-list > div {
+  display: grid;
+  min-height: 54px;
+  grid-template-columns: 150px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  background: var(--white);
+  padding: 10px 12px;
+}
+
+.shortcut-list kbd {
+  justify-self: start;
+  border: 1px solid #b9c6c2;
+  border-bottom-width: 3px;
+  background: var(--surface-muted);
+  color: var(--navy);
+  padding: 5px 7px 4px;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 8px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.shortcut-list span {
+  color: #596a67;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
 .issue-table {
   max-height: 310px;
   border: 1px solid var(--border-subtle);
@@ -1876,6 +2049,10 @@ input.sr-only[type="file"] {
 
   .map-stage {
     padding-inline: 12px;
+  }
+
+  .map-minimap {
+    display: none;
   }
 }
 

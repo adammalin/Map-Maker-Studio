@@ -8,13 +8,15 @@ USA Map Studio is a local-first Electron desktop editor for building accurate ma
 - Resolve city/state-only rows locally with no geocoding service or API key.
 - Create, rename, reorder, hide, show, and delete named location layers. Every location belongs to exactly one layer, and CSV imports target a specific layer without disturbing the others.
 - Hide or show any individual city without deleting it. Hidden locations remain in the list and project JSON but are omitted from the map and every export.
-- Turn on a shared pin style when every layer must use the same built-in or custom SVG symbol, color, and size; turn it off to keep per-location styles.
+- Choose **All pins** or **This pin** directly in the location inspector. All pins is the default and applies type, custom SVG, color, and size changes everywhere; This pin preserves the current appearance and edits only the selected location.
 - Edit pin type, pin color, size, label, label visibility, label placement, notes, and coordinates.
-- Import reusable custom SVG pin artwork and apply it across the entire map. Sanitized vector markup is embedded in the project JSON so the design travels with the file; safe Illustrator gradient and stroke styles are retained, and SVGs using `currentColor` follow the location's pin color.
+- Import reusable custom SVG pin artwork for all pins or only the selected pin, according to the active editing scope. Sanitized vector markup is embedded in the project JSON so the design travels with the file; safe Illustrator gradient and stroke styles are retained, and SVGs using `currentColor` follow the effective pin color.
 - Choose colors from named ORNL Primary, Secondary, and Accent swatches in every color field, or keep using the native picker and exact hex values. The swatches are a draft aid and do not replace communications review.
 - Switch between distinct workspaces: Map editor maximizes the canvas, Locations opens the searchable location manager, Layers controls organization and visibility, Map style focuses the global/state appearance inspector, and Export shows output choices.
 - Style the map canvas, default state fill, individual state colors, state lines, optional county lines, state abbreviations, label halo, and legend.
-- Pan and zoom the live map, select a state for a fill override, and drag pins to refine coordinates.
+- Navigate the live map with Illustrator-style controls: hold Space and drag from anywhere to pan, scroll or use the dedicated buttons to zoom from 40% through 400%, use `0` for Fit and `1` for 100%, and recenter with the interactive navigator minimap.
+- Use familiar project shortcuts for Save (`Cmd/Ctrl+S`), Open (`Cmd/Ctrl+O`), New (`Cmd/Ctrl+N`), Undo/Redo, location search (`/`), and the in-app keyboard reference (`?`). Text fields keep their normal editing behavior.
+- Select a state for a fill override and drag pins without Space held to refine coordinates.
 - Save and reopen a versioned `.usmap.json` project containing the complete map configuration, ordered layers, layer/location visibility, shared style, and every location.
 - Autosave every project-changing action. After a project is opened or saved, the same `.usmap.json` file is updated atomically; until a user-selected path exists, the app maintains an internal JSON recovery file and restores it on launch.
 - Export a scalable SVG, a 2400 x 1440 PNG, or a one-slide 16:9 PowerPoint whose states, boundary layers, text, standard pins, and legend are separate editable objects. SVG uses named layer groups; visible PowerPoint location objects are prefixed with their layer name in the Selection Pane. Imported custom SVG pins remain separate movable vector objects.
@@ -22,11 +24,11 @@ USA Map Studio is a local-first Electron desktop editor for building accurate ma
 
 The interface deliberately follows the clear hierarchy and square-edged desktop design language of OrgChart Studio while remaining a separate product.
 
-Current application version: **0.4.1**.
+Current application version: **0.5.0**.
 
 ## Documentation
 
-- [USA Map Studio User Guide (PDF)](docs/USA-Map-Studio-User-Guide.pdf) - installation commands, workspace modes, CSV import, custom SVG pins, ORNL color swatches, exports, and local MCP control.
+- [USA Map Studio User Guide (PDF)](docs/USA-Map-Studio-User-Guide.pdf) - installation commands, Illustrator-style canvas navigation and shortcuts, workspace modes, CSV import, custom SVG pins, ORNL color swatches, exports, and local MCP control.
 - [Project file format](docs/PROJECT-FORMAT.md) - schema version 4 layers, per-location visibility, shared pin styling, embedded custom pins, validation, and earlier-version migration.
 - [Local MCP integration](docs/MCP.md) - security model, setup, client configuration, and the review-first workflow.
 - [Editable PowerPoint example](examples/usa-map-studio-editable-export.pptx) - a generated sample for checking the PowerPoint Selection Pane and direct object editing.

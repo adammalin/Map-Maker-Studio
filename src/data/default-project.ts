@@ -90,7 +90,7 @@ export function createDefaultProject(): UsaMapProject {
     },
     layers: [defaultLayer],
     sharedPinStyle: {
-      enabled: false,
+      enabled: true,
       pinType: "pin",
       customPinId: null,
       pinColor: "#00662c",

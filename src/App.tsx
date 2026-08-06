@@ -17,6 +17,7 @@ import {
   MagnifyingGlass,
   MapPin,
   MapTrifold,
+  Minus,
   PaintBrush,
   Plus,
   PresentationChart,
@@ -34,13 +35,16 @@ import { downloadBlob, prepareSvgMarkup, projectToPowerPoint, svgToPng } from ".
 import { fileSafeName, parseProjectText, serializeProject } from "./lib/project";
 import { buildMcpProposal, validateProjectCandidate } from "./lib/mcp-proposals";
 import { createCustomPinDesign } from "./lib/custom-pin";
-import { effectivePinStyle, layerName } from "./lib/layers";
+import { effectivePinStyle, layerName, setPinEditingScope as applyPinEditingScope } from "./lib/layers";
 import type { AiMapProposal, ImportResult, MapLayer, MapLocation, MapSettings, SharedPinStyle, UsaMapProject } from "./types";
 import { MapCanvas } from "./components/MapCanvas";
+import { MapMiniMap } from "./components/MapMiniMap";
+import { KeyboardShortcutsDialog } from "./components/KeyboardShortcutsDialog";
 import { Inspector } from "./components/Inspector";
 import { ImportDialog } from "./components/ImportDialog";
 import { AiProposalDialog } from "./components/AiProposalDialog";
 import { LayerInspector, LayerPanel } from "./components/LayerPanel";
+import { steppedMapZoom, zoomViewportAt } from "./lib/viewport";
 
 interface HistoryState {
   past: UsaMapProject[];
@@ -64,7 +68,7 @@ const WORKSPACE_MODE_COPY: Record<WorkspaceMode, { title: string; description: s
   export: { title: "Export preview", description: "Review the composition and choose an output format" },
 };
 
-const APP_VERSION = "0.4.1";
+const APP_VERSION = "0.5.0";
 
 export function App() {
   const [history, setHistory] = useState<HistoryState>({ past: [], present: createDefaultProject(), future: [] });
@@ -82,6 +86,8 @@ export function App() {
   const [aiProposalOpen, setAiProposalOpen] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [spacePressed, setSpacePressed] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [exporting, setExporting] = useState<ExportKind | null>(null);
   const [activeSidebar, setActiveSidebar] = useState<WorkspaceMode>("map");
   const svgRef = useRef<SVGSVGElement>(null);
@@ -168,10 +174,22 @@ export function App() {
   }
 
   function updateSharedPinStyle(patch: Partial<SharedPinStyle>) {
+    if (typeof patch.enabled === "boolean" && Object.keys(patch).length === 1) {
+      setPinEditingScope(patch.enabled ? "all" : "single");
+      return;
+    }
     commitProject((current) => ({
       ...current,
       sharedPinStyle: { ...current.sharedPinStyle, ...patch },
     }));
+  }
+
+  function setPinEditingScope(scope: "all" | "single") {
+    if ((scope === "all") === project.sharedPinStyle.enabled) return;
+    commitProject((current) => applyPinEditingScope(current, scope, selectedLocationId));
+    showNotice(scope === "all"
+      ? "All pins editing is on. Pin style changes now apply to every location."
+      : "Single-pin editing is on. The current shared appearance was preserved for every location.");
   }
 
   function addLayer() {
@@ -270,15 +288,20 @@ export function App() {
   function importCustomPin(svg: string, fileName: string) {
     try {
       const { design, removedItems } = createCustomPinDesign(svg, fileName);
-      const locationCount = project.locations.length;
+      const applyToAll = project.sharedPinStyle.enabled || !selectedLocationId;
+      const affectedCount = applyToAll ? project.locations.length : 1;
       commitProject((current) => ({
         ...current,
         customPins: [...current.customPins, design],
-        sharedPinStyle: { ...current.sharedPinStyle, enabled: true, customPinId: design.id },
-        locations: current.locations.map((location) => ({ ...location, customPinId: design.id })),
+        sharedPinStyle: applyToAll
+          ? { ...current.sharedPinStyle, enabled: true, customPinId: design.id }
+          : current.sharedPinStyle,
+        locations: current.locations.map((location) =>
+          applyToAll || location.id === selectedLocationId ? { ...location, customPinId: design.id } : location,
+        ),
       }));
       showNotice(
-        `${design.name} was embedded in the project and applied to ${locationCount} location${locationCount === 1 ? "" : "s"}.${removedItems ? ` ${removedItems} unsupported or unsafe SVG item${removedItems === 1 ? " was" : "s were"} removed.` : ""}`,
+        `${design.name} was embedded in the project and applied to ${applyToAll ? `all ${affectedCount} locations` : "the selected location"}.${removedItems ? ` ${removedItems} unsupported or unsafe SVG item${removedItems === 1 ? " was" : "s were"} removed.` : ""}`,
       );
     } catch (error) {
       showNotice(error instanceof Error ? error.message : "The custom SVG pin could not be imported.");
@@ -415,6 +438,21 @@ export function App() {
     }
   }
 
+  function zoomTo(requestedZoom: number) {
+    const next = zoomViewportAt({ zoom, pan }, requestedZoom);
+    setZoom(next.zoom);
+    setPan(next.pan);
+  }
+
+  function zoomByStep(direction: -1 | 1) {
+    zoomTo(steppedMapZoom(zoom, direction));
+  }
+
+  function fitMapView() {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  }
+
   async function newProject() {
     if (dirty && !window.confirm("Start a new map and discard the current unsaved changes?")) return;
     if (window.usaMapDesktop) await window.usaMapDesktop.resetAutosaveTarget();
@@ -446,21 +484,65 @@ export function App() {
   }
 
   useEffect(() => {
-    const handler = (event: KeyboardEvent) => {
+    const keydown = (event: KeyboardEvent) => {
       const command = event.metaKey || event.ctrlKey;
+      const target = event.target;
+      const editingText = target instanceof HTMLElement && target.matches("input, textarea, select, [contenteditable='true']");
       if (command && event.key.toLowerCase() === "s") {
         event.preventDefault();
         void saveProject();
+      } else if (command && event.key.toLowerCase() === "o") {
+        event.preventDefault();
+        void openProject();
+      } else if (command && event.key.toLowerCase() === "n") {
+        event.preventDefault();
+        void newProject();
+      } else if (editingText) {
+        return;
       } else if (command && event.key.toLowerCase() === "z") {
         event.preventDefault();
         if (event.shiftKey) redo(); else undo();
-      } else if (event.key === "/" && document.activeElement?.tagName !== "INPUT" && document.activeElement?.tagName !== "TEXTAREA") {
+      } else if (command && event.key.toLowerCase() === "y") {
+        event.preventDefault();
+        redo();
+      } else if (event.code === "Space" && !command && !event.altKey) {
+        event.preventDefault();
+        setSpacePressed(true);
+      } else if (!command && (event.key === "+" || event.key === "=")) {
+        event.preventDefault();
+        zoomByStep(1);
+      } else if (!command && (event.key === "-" || event.key === "_")) {
+        event.preventDefault();
+        zoomByStep(-1);
+      } else if (!command && event.key === "0") {
+        event.preventDefault();
+        fitMapView();
+      } else if (!command && event.key === "1") {
+        event.preventDefault();
+        zoomTo(1);
+      } else if (event.key === "?") {
+        event.preventDefault();
+        setShortcutsOpen(true);
+      } else if (event.key === "Escape" && shortcutsOpen) {
+        event.preventDefault();
+        setShortcutsOpen(false);
+      } else if (event.key === "/") {
         event.preventDefault();
         searchInputRef.current?.focus();
       }
     };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
+    const keyup = (event: KeyboardEvent) => {
+      if (event.code === "Space") setSpacePressed(false);
+    };
+    const resetSpace = () => setSpacePressed(false);
+    window.addEventListener("keydown", keydown);
+    window.addEventListener("keyup", keyup);
+    window.addEventListener("blur", resetSpace);
+    return () => {
+      window.removeEventListener("keydown", keydown);
+      window.removeEventListener("keyup", keyup);
+      window.removeEventListener("blur", resetSpace);
+    };
   });
 
   useEffect(() => () => {
@@ -702,13 +784,19 @@ export function App() {
                 <button type="button" className={project.map.showLocationLabels ? "is-active" : ""} aria-pressed={project.map.showLocationLabels} onClick={() => updateMap({ showLocationLabels: !project.map.showLocationLabels })}>Pin labels</button>
               </div>
             </div>
-            <div className="zoom-status" aria-label={`Map zoom ${Math.round(zoom * 100)} percent`}><strong>{Math.round(zoom * 100)}%</strong><small>Scroll map to zoom · drag background to pan</small></div>
+            <div className="zoom-status" data-testid="zoom-status" aria-label={`Map zoom ${Math.round(zoom * 100)} percent`}><strong>{Math.round(zoom * 100)}%</strong><small>Space + drag to pan · scroll to zoom</small></div>
             <div className="toolbar-actions">
+              <div className="viewport-controls" role="group" aria-label="Canvas zoom controls">
+                <button type="button" data-testid="zoom-out" onClick={() => zoomByStep(-1)} disabled={zoom <= 0.4} aria-label="Zoom out" title="Zoom out (−)"><Minus size={16} weight="bold" /></button>
+                <button type="button" data-testid="zoom-in" onClick={() => zoomByStep(1)} disabled={zoom >= 4} aria-label="Zoom in" title="Zoom in (+)"><Plus size={16} weight="bold" /></button>
+                <button type="button" data-testid="zoom-actual" onClick={() => zoomTo(1)} aria-label="Actual size" title="Actual size (1)"><span>100</span></button>
+                <button type="button" data-testid="zoom-fit" onClick={fitMapView} aria-label="Fit map in view" title="Fit map in view (0)"><ArrowsOut size={16} /></button>
+                <button type="button" data-testid="keyboard-shortcuts" onClick={() => setShortcutsOpen(true)} aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)"><Question size={16} /></button>
+              </div>
               <div className="toolbar-actions__history">
                 <button type="button" className="button button--secondary button--history" onClick={undo} disabled={!history.past.length} aria-label="Undo"><ArrowCounterClockwise size={17} /></button>
                 <button type="button" className="button button--secondary button--history" onClick={redo} disabled={!history.future.length} aria-label="Redo"><ArrowClockwise size={17} /></button>
               </div>
-              <button type="button" className="button button--secondary" onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}><ArrowsOut size={17} /> Fit view</button>
               <button type="button" className="button button--primary" onClick={() => void exportMap("png")} disabled={exporting !== null}><DownloadSimple size={17} /> {exporting ? "Exporting…" : "Quick PNG"}</button>
             </div>
           </div>
@@ -765,6 +853,7 @@ export function App() {
                 selectedStateFips={selectedStateFips}
                 zoom={zoom}
                 pan={pan}
+                spacePressed={spacePressed}
                 onSelectLocation={(id) => {
                   setSelectedLocationId(id);
                   if (id) {
@@ -783,7 +872,8 @@ export function App() {
                 onPanChange={setPan}
                 onZoomChange={setZoom}
               />
-              <div className="map-stage__footer"><span>1200 × 720 export canvas</span><span>Albers USA projection</span><span>Drag pins to refine</span></div>
+              <MapMiniMap project={project} zoom={zoom} pan={pan} onPanChange={setPan} />
+              <div className="map-stage__footer"><span>1200 × 720 export canvas</span><span>Albers USA projection</span><span>Space + drag to pan · drag pins to refine</span></div>
             </div>
 
             {activeSidebar === "export" ? (
@@ -819,6 +909,8 @@ export function App() {
                 layers={project.layers}
                 sharedPinStyle={project.sharedPinStyle}
                 onUpdateLocation={(patch) => selectedLocation && updateLocation(selectedLocation.id, patch)}
+                onUpdateSharedPinStyle={updateSharedPinStyle}
+                onSetPinEditingScope={setPinEditingScope}
                 onUpdateMap={updateMap}
                 onDuplicateLocation={duplicateSelectedLocation}
                 onRemoveLocation={removeSelectedLocation}
@@ -878,6 +970,7 @@ export function App() {
           onReviewLater={() => setAiProposalOpen(false)}
         />
       ) : null}
+      {shortcutsOpen ? <KeyboardShortcutsDialog onClose={() => setShortcutsOpen(false)} /> : null}
     </div>
   );
 }

@@ -29,6 +29,7 @@ test("PowerPoint export uses separate editable objects instead of a full-slide i
 
 test("custom SVG pins remain separate vector objects without flattening the map", async () => {
   const project = createDefaultProject();
+  project.sharedPinStyle.enabled = false;
   const { design } = createCustomPinDesign(
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="currentColor" d="M12 1 23 12 12 23 1 12Z"/></svg>',
     "diamond.svg",

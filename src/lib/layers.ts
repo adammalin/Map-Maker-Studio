@@ -57,3 +57,36 @@ export function sharedPinStyleFromLocation(location?: MapLocation): SharedPinSty
     pinSize: location?.pinSize ?? 16,
   };
 }
+
+export type PinEditingScope = "all" | "single";
+
+export function setPinEditingScope(
+  project: UsaMapProject,
+  scope: PinEditingScope,
+  referenceLocationId?: string | null,
+): UsaMapProject {
+  if (scope === "single") {
+    if (!project.sharedPinStyle.enabled) return project;
+    const style = project.sharedPinStyle;
+    return {
+      ...project,
+      sharedPinStyle: { ...style, enabled: false },
+      locations: project.locations.map((location) => ({
+        ...location,
+        pinType: style.pinType,
+        customPinId: style.customPinId,
+        pinColor: style.pinColor,
+        pinSize: style.pinSize,
+      })),
+    };
+  }
+
+  if (project.sharedPinStyle.enabled) return project;
+  const reference = project.locations.find((location) => location.id === referenceLocationId) ?? project.locations[0];
+  return {
+    ...project,
+    sharedPinStyle: reference
+      ? { ...sharedPinStyleFromLocation(reference), enabled: true }
+      : { ...project.sharedPinStyle, enabled: true },
+  };
+}
