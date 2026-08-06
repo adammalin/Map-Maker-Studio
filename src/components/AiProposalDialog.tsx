@@ -40,7 +40,7 @@ export function AiProposalDialog({
         <div className="dialog__body">
           <section className="ai-safety-note">
             <ShieldCheck size={21} weight="fill" />
-            <span><strong>You remain in control.</strong> The MCP tool prepared this preview only. Nothing is saved to a project file unless you apply the proposal and then choose Save project.</span>
+            <span><strong>You remain in control.</strong> The MCP tool prepared this preview only. Nothing changes until you apply it; after Apply, normal autosave updates the bound project JSON and recovery copy.</span>
           </section>
           {stale ? (
             <section className="ai-stale-warning" role="alert">

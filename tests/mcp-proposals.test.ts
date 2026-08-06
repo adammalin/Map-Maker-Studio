@@ -20,6 +20,19 @@ test("MCP location changes stage a proposal without mutating the working project
   assert.equal(result.proposal.baseUpdatedAt, current.project.updatedAt);
 });
 
+test("MCP can stage independent location visibility without deleting the city", () => {
+  const current = createDefaultProject();
+  const result = buildMcpProposal("stage_location_update", {
+    locationId: current.locations[0].id,
+    patch: { visible: false },
+    expectedUpdatedAt: current.project.updatedAt,
+    summary: "Hide Seattle without deleting it",
+  }, current);
+  assert.equal(current.locations[0].visible, true);
+  assert.equal(result.proposal.proposed.locations[0].visible, false);
+  assert.equal(result.proposal.proposed.locations.length, current.locations.length);
+});
+
 test("MCP proposal creation rejects a stale project timestamp", () => {
   const current = createDefaultProject();
   assert.throws(() => buildMcpProposal("stage_map_style_update", {
@@ -93,4 +106,82 @@ test("MCP custom SVG import stages a sanitized embedded design", () => {
     result.proposal.proposed.customPins[0].id,
   );
   assert.equal(result.removedSvgItems, 1);
+});
+
+test("MCP custom SVG import can assign the design to every location", () => {
+  const current = createDefaultProject();
+  const result = buildMcpProposal("stage_custom_pin_import", {
+    name: "National marker",
+    svg: '<svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="currentColor"/></svg>',
+    assignToAll: true,
+    expectedUpdatedAt: current.project.updatedAt,
+    summary: "Use the approved marker everywhere",
+  }, current);
+  const designId = result.proposal.proposed.customPins[0].id;
+  assert.equal(result.proposal.proposed.locations.length, current.locations.length);
+  assert.ok(result.proposal.proposed.locations.every((location) => location.customPinId === designId));
+  assert.ok(current.locations.every((location) => location.customPinId === null));
+  assert.equal(result.proposal.proposed.sharedPinStyle.enabled, true);
+  assert.equal(result.proposal.proposed.sharedPinStyle.customPinId, designId);
+});
+
+test("MCP layer proposals create, rename, toggle, and assign without mutating the working project", () => {
+  const current = createDefaultProject();
+  const created = buildMcpProposal("stage_layer_create", {
+    name: "Layer #2 - IO cities",
+    description: "ITER Organization contracts",
+    expectedUpdatedAt: current.project.updatedAt,
+    summary: "Create the IO layer",
+  }, current).proposal.proposed;
+  assert.equal(current.layers.length, 1);
+  assert.equal(created.layers.length, 2);
+  const ioLayer = created.layers[1];
+
+  const renamed = buildMcpProposal("stage_layer_update", {
+    layerId: ioLayer.id,
+    patch: { name: "IO cities", visible: false },
+    expectedUpdatedAt: created.project.updatedAt,
+    summary: "Rename and hide the IO layer",
+  }, created).proposal.proposed;
+  assert.equal(renamed.layers[1].name, "IO cities");
+  assert.equal(renamed.layers[1].visible, false);
+
+  const assigned = buildMcpProposal("stage_locations_assign_layer", {
+    layerId: ioLayer.id,
+    locationIds: [renamed.locations[0].id, renamed.locations[1].id],
+    expectedUpdatedAt: renamed.project.updatedAt,
+    summary: "Assign two IO locations",
+  }, renamed).proposal.proposed;
+  assert.equal(assigned.locations.filter((location) => location.layerId === ioLayer.id).length, 2);
+});
+
+test("MCP CSV import can replace only its target layer", () => {
+  const current = createDefaultProject();
+  current.layers.push({ id: "layer-io", name: "IO cities", description: "", visible: true, createdAt: new Date().toISOString() });
+  current.locations[0].layerId = "layer-io";
+  const result = buildMcpProposal("stage_locations_from_csv", {
+    csv: "city,state\nOak Ridge,TN\n",
+    mode: "replace_layer",
+    layerId: "layer-io",
+    expectedUpdatedAt: current.project.updatedAt,
+    summary: "Replace the IO city list",
+  }, current);
+  assert.equal(result.proposal.proposed.locations.length, 8);
+  assert.equal(result.proposal.proposed.locations.filter((location) => location.layerId === "layer-io").length, 1);
+});
+
+test("MCP shared pin style guarantees one effective style across layers", () => {
+  const current = createDefaultProject();
+  const result = buildMcpProposal("stage_shared_pin_style_update", {
+    patch: { enabled: true, pinType: "circle", pinColor: "#ffb000", pinSize: 14 },
+    expectedUpdatedAt: current.project.updatedAt,
+    summary: "Use one yellow dot everywhere",
+  }, current);
+  assert.deepEqual(result.proposal.proposed.sharedPinStyle, {
+    enabled: true,
+    pinType: "circle",
+    customPinId: null,
+    pinColor: "#ffb000",
+    pinSize: 14,
+  });
 });

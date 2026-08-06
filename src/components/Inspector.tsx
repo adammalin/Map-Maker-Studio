@@ -8,33 +8,37 @@ import {
 } from "@phosphor-icons/react";
 import { useRef } from "react";
 import { ORNL_SWATCH_GROUPS } from "../data/ornl-palette";
-import { customPinInnerMarkup } from "../lib/custom-pin";
+import { scopedCustomPinInnerMarkup } from "../lib/custom-pin";
 import { resolveCity } from "../lib/geocoder";
 import { STATE_BY_FIPS, STATES } from "../data/state-metadata";
-import type { CustomPinDesign, MapLocation, MapSettings } from "../types";
+import { effectivePinStyle } from "../lib/layers";
+import type { CustomPinDesign, MapLayer, MapLocation, MapSettings, SharedPinStyle } from "../types";
 
 interface InspectorProps {
   location: MapLocation | null;
   map: MapSettings;
   selectedStateFips: string | null;
   customPins: CustomPinDesign[];
+  layers: MapLayer[];
+  sharedPinStyle: SharedPinStyle;
   onUpdateLocation(patch: Partial<MapLocation>): void;
   onUpdateMap(patch: Partial<MapSettings>): void;
   onDuplicateLocation(): void;
   onRemoveLocation(): void;
   onSelectState(fips: string | null): void;
   onImportCustomPin(svg: string, fileName: string): void;
+  onApplyCustomPinToAll(id: string): void;
   onRemoveCustomPin(id: string): void;
   onNotice(message: string): void;
 }
 
-function ColorField({ label, value, onChange }: { label: string; value: string; onChange(value: string): void }) {
+export function ColorField({ label, value, onChange, disabled = false }: { label: string; value: string; onChange(value: string): void; disabled?: boolean }) {
   return (
     <div className="color-field">
       <span>{label}</span>
       <span className="color-field__control">
-        <input type="color" value={value} onChange={(event) => onChange(event.target.value)} aria-label={`${label} color picker`} />
-        <input value={value} onChange={(event) => onChange(event.target.value)} aria-label={`${label} hex color`} />
+        <input type="color" value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} aria-label={`${label} color picker`} />
+        <input value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} aria-label={`${label} hex color`} />
       </span>
       <details className="brand-swatches">
         <summary>ORNL color swatches</summary>
@@ -51,6 +55,7 @@ function ColorField({ label, value, onChange }: { label: string; value: string; 
                     style={{ background: color.value }}
                     title={`${color.name} · ${color.value.toUpperCase()}`}
                     aria-label={`Use ${color.name} ${color.value} for ${label}`}
+                    disabled={disabled}
                     onClick={() => onChange(color.value)}
                   />
                 ))}
@@ -69,21 +74,25 @@ export function Inspector({
   map,
   selectedStateFips,
   customPins,
+  layers,
+  sharedPinStyle,
   onUpdateLocation,
   onUpdateMap,
   onDuplicateLocation,
   onRemoveLocation,
   onSelectState,
   onImportCustomPin,
+  onApplyCustomPinToAll,
   onRemoveCustomPin,
   onNotice,
 }: InspectorProps) {
   const svgInputRef = useRef<HTMLInputElement>(null);
   if (location) {
-    const selectedCustomPin = location.customPinId
-      ? customPins.find((design) => design.id === location.customPinId) ?? null
+    const effectiveStyle = effectivePinStyle({ sharedPinStyle }, location);
+    const selectedCustomPin = effectiveStyle.customPinId
+      ? customPins.find((design) => design.id === effectiveStyle.customPinId) ?? null
       : null;
-    const pinTypeValue = selectedCustomPin ? `custom:${selectedCustomPin.id}` : location.pinType;
+    const pinTypeValue = selectedCustomPin ? `custom:${selectedCustomPin.id}` : effectiveStyle.pinType;
     return (
       <aside className="inspector" aria-label="Location inspector" data-testid="location-inspector">
         <div className="inspector__heading">
@@ -93,6 +102,12 @@ export function Inspector({
         <div className="inspector__body">
           <section className="form-section">
             <h3>Place</h3>
+            <label><span>Layer</span>
+              <select value={location.layerId} onChange={(event) => onUpdateLocation({ layerId: event.target.value })}>
+                {layers.map((layer) => <option key={layer.id} value={layer.id}>{layer.name}</option>)}
+              </select>
+            </label>
+            <label className="toggle-row"><span>Show this location on map and exports</span><input type="checkbox" checked={location.visible} onChange={(event) => onUpdateLocation({ visible: event.target.checked })} /></label>
             <label><span>City</span><input value={location.city} onChange={(event) => onUpdateLocation({ city: event.target.value })} /></label>
             <label><span>State</span>
               <select value={location.state} onChange={(event) => onUpdateLocation({ state: event.target.value })}>
@@ -122,8 +137,9 @@ export function Inspector({
           </section>
           <section className="form-section">
             <h3>Pin</h3>
+            {sharedPinStyle.enabled ? <p className="shared-style-note"><strong>Shared pin style is on.</strong> Every layer uses the same pin. Change it in the Layers workspace.</p> : null}
             <label><span>Type</span>
-              <select value={pinTypeValue} onChange={(event) => {
+              <select disabled={sharedPinStyle.enabled} value={pinTypeValue} onChange={(event) => {
                 const next = event.target.value;
                 if (next.startsWith("custom:")) onUpdateLocation({ customPinId: next.slice(7) });
                 else onUpdateLocation({ pinType: next as MapLocation["pinType"], customPinId: null });
@@ -138,8 +154,8 @@ export function Inspector({
                 ) : null}
               </select>
             </label>
-            <ColorField label="Color" value={location.pinColor} onChange={(pinColor) => onUpdateLocation({ pinColor })} />
-            <label><span>Size <em>{location.pinSize}px</em></span><input type="range" min="6" max="40" value={location.pinSize} onChange={(event) => onUpdateLocation({ pinSize: Number(event.target.value) })} /></label>
+            <ColorField disabled={sharedPinStyle.enabled} label="Color" value={effectiveStyle.pinColor} onChange={(pinColor) => onUpdateLocation({ pinColor })} />
+            <label><span>Size <em>{effectiveStyle.pinSize}px</em></span><input disabled={sharedPinStyle.enabled} type="range" min="6" max="40" value={effectiveStyle.pinSize} onChange={(event) => onUpdateLocation({ pinSize: Number(event.target.value) })} /></label>
             <input
               ref={svgInputRef}
               className="sr-only"
@@ -156,11 +172,14 @@ export function Inspector({
             </button>
             {selectedCustomPin ? (
               <section className="custom-pin-card">
-                <svg viewBox={selectedCustomPin.viewBox} role="img" aria-label={`${selectedCustomPin.name} custom pin preview`} style={{ color: location.pinColor }}>
-                  <g dangerouslySetInnerHTML={{ __html: customPinInnerMarkup(selectedCustomPin) }} />
+                <svg className="custom-pin-card__preview" viewBox={selectedCustomPin.viewBox} role="img" aria-label={`${selectedCustomPin.name} custom pin preview`} style={{ color: effectiveStyle.pinColor }}>
+                  <g dangerouslySetInnerHTML={{ __html: scopedCustomPinInnerMarkup(selectedCustomPin, `preview-${location.id}`) }} />
                 </svg>
                 <span><strong>{selectedCustomPin.name}</strong><small>Embedded in project JSON</small></span>
-                <button type="button" onClick={() => onRemoveCustomPin(selectedCustomPin.id)} aria-label={`Remove ${selectedCustomPin.name}`}><Trash size={15} /></button>
+                <button className="custom-pin-card__delete" type="button" onClick={() => onRemoveCustomPin(selectedCustomPin.id)} aria-label={`Remove ${selectedCustomPin.name}`} title="Delete this custom pin design"><Trash size={15} /></button>
+                <button className="button button--secondary custom-pin-card__apply" type="button" onClick={() => onApplyCustomPinToAll(selectedCustomPin.id)}>
+                  <MapPin size={15} /> Apply to all locations
+                </button>
               </section>
             ) : (
               <p className="form-hint">Imported SVGs are sanitized, embedded in the project, and available to every location. Shapes using <code>currentColor</code> follow the selected pin color.</p>

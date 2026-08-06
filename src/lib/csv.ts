@@ -11,6 +11,7 @@ const aliases = {
   latitude: ["latitude", "lat"],
   longitude: ["longitude", "lon", "lng", "long"],
   label: ["label", "displaylabel", "displayname", "maplabel"],
+  visible: ["visible", "showlocation", "locationvisible", "showpin", "pinvisible"],
   showLabel: ["showlabel", "labelvisible", "displaylabelonmap"],
   pinType: ["pintype", "markertype", "symbol", "marker"],
   pinColor: ["pincolor", "markercolor", "color"],
@@ -63,7 +64,7 @@ function customDataFor(row: Record<string, unknown>): MapLocation["customData"] 
   );
 }
 
-export function parseLocationsCsv(text: string): ImportResult {
+export function parseLocationsCsv(text: string, options: { layerId?: string } = {}): ImportResult {
   const parsed = Papa.parse<Record<string, unknown>>(text, {
     header: true,
     skipEmptyLines: "greedy",
@@ -109,11 +110,13 @@ export function parseLocationsCsv(text: string): ImportResult {
     const labelColorValue = valueFor(row, aliases.labelColor);
     const pinSizeValue = Number(valueFor(row, aliases.pinSize));
     locations.push(createLocation({
+      layerId: options.layerId,
       city,
       state,
       latitude,
       longitude,
       label,
+      visible: parseBoolean(valueFor(row, aliases.visible), true),
       showLabel: parseBoolean(valueFor(row, aliases.showLabel), true),
       pinType: parsePinType(valueFor(row, aliases.pinType)),
       pinColor: isHexColor(pinColorValue) ? pinColorValue : "#00662c",
@@ -129,7 +132,7 @@ export function parseLocationsCsv(text: string): ImportResult {
 }
 
 export const CSV_TEMPLATE = [
-  "city,state,latitude,longitude,label,show_label,pin_type,pin_color,pin_size,label_color,label_position,notes",
-  "Oak Ridge,TN,,,Oak Ridge,true,pin,#00662c,18,#373a36,right,Coordinates resolved offline",
-  "Seattle,WA,47.6062,-122.3321,Seattle,true,circle,#006ba6,15,#373a36,above,Coordinates supplied",
+  "city,state,latitude,longitude,label,visible,show_label,pin_type,pin_color,pin_size,label_color,label_position,notes",
+  "Oak Ridge,TN,,,Oak Ridge,true,true,pin,#00662c,18,#373a36,right,Coordinates resolved offline",
+  "Seattle,WA,47.6062,-122.3321,Seattle,true,true,circle,#006ba6,15,#373a36,above,Coordinates supplied",
 ].join("\n");

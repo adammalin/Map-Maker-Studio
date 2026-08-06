@@ -1,7 +1,8 @@
 import { parseLocationsCsv } from "./csv";
 import { parseProjectText } from "./project";
 import { createCustomPinDesign } from "./custom-pin";
-import type { AiMapProposal, MapLocation, MapSettings, UsaMapProject } from "../types";
+import { createMapLayer } from "../data/default-project";
+import type { AiMapProposal, MapLayer, MapLocation, MapSettings, SharedPinStyle, UsaMapProject } from "../types";
 
 export interface ProposalBuildResult {
   proposal: AiMapProposal;
@@ -27,6 +28,8 @@ const MAP_KEYS = new Set<keyof MapSettings>([
 ]);
 
 const LOCATION_KEYS = new Set<keyof MapLocation>([
+  "layerId",
+  "visible",
   "city",
   "state",
   "latitude",
@@ -41,6 +44,15 @@ const LOCATION_KEYS = new Set<keyof MapLocation>([
   "labelPosition",
   "notes",
   "customData",
+]);
+
+const LAYER_KEYS = new Set<keyof MapLayer>(["name", "description", "visible"]);
+const SHARED_PIN_STYLE_KEYS = new Set<keyof SharedPinStyle>([
+  "enabled",
+  "pinType",
+  "customPinId",
+  "pinColor",
+  "pinSize",
 ]);
 
 function record(value: unknown, label: string): Record<string, unknown> {
@@ -62,6 +74,13 @@ function assertFresh(input: Record<string, unknown>, current: UsaMapProject): vo
       "The open project changed after it was read. Read get_current_project again and prepare a fresh proposal.",
     );
   }
+}
+
+function layerById(current: UsaMapProject, value: unknown): MapLayer {
+  const layerId = text(value, "");
+  const layer = current.layers.find((candidate) => candidate.id === layerId);
+  if (!layer) throw new Error("The requested layer was not found in the open project.");
+  return layer;
 }
 
 function normalizeCandidate(candidate: UsaMapProject, current: UsaMapProject): UsaMapProject {
@@ -121,6 +140,7 @@ export function buildMcpProposal(
     return {
       proposal: proposal(current, next, operation, requestedSummary, [
         `Replace ${current.locations.length} current locations with ${next.locations.length} proposed locations.`,
+        `Replace ${current.layers.length} current layers with ${next.layers.length} proposed layers.`,
         "Preserve this project's stable ID and creation date.",
       ]),
     };
@@ -149,10 +169,13 @@ export function buildMcpProposal(
       throw new Error("At least one location is required.");
     }
     if (input.locations.length > 2_000) throw new Error("A single proposal can add at most 2,000 locations.");
+    const fallbackLayer = typeof input.layerId === "string" ? layerById(current, input.layerId) : current.layers[0];
     const additions = input.locations.map((item, index) => {
       const location = record(item, `Location ${index + 1}`);
+      const targetLayer = typeof location.layerId === "string" ? layerById(current, location.layerId) : fallbackLayer;
       return {
         ...location,
+        layerId: targetLayer.id,
         id: typeof location.id === "string" && location.id.trim()
           ? location.id.trim()
           : `location-ai-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${index}`}`,
@@ -171,19 +194,20 @@ export function buildMcpProposal(
     const csv = typeof input.csv === "string" ? input.csv : "";
     if (!csv.trim()) throw new Error("CSV contents are required.");
     if (csv.length > 4_500_000) throw new Error("CSV contents exceed the 4.5 MB tool limit.");
-    const mode = input.mode === "replace" ? "replace" : "add";
-    const imported = parseLocationsCsv(csv);
+    const targetLayer = typeof input.layerId === "string" ? layerById(current, input.layerId) : current.layers[0];
+    const mode = input.mode === "replace" || input.mode === "replace_layer" ? "replace_layer" : "add";
+    const imported = parseLocationsCsv(csv, { layerId: targetLayer.id });
     if (!imported.locations.length) {
       throw new Error("The CSV did not contain any locations that could be mapped.");
     }
     const candidate = structuredClone(current);
-    candidate.locations = mode === "replace"
-      ? imported.locations
+    candidate.locations = mode === "replace_layer"
+      ? [...candidate.locations.filter((location) => location.layerId !== targetLayer.id), ...imported.locations]
       : [...candidate.locations, ...imported.locations];
     const next = normalizeCandidate(candidate, current);
     return {
       proposal: proposal(current, next, operation, requestedSummary, [
-        `${mode === "replace" ? "Replace the current list with" : "Add"} ${imported.locations.length} resolved CSV location${imported.locations.length === 1 ? "" : "s"}.`,
+        `${mode === "replace_layer" ? `Replace ${targetLayer.name} with` : `Add to ${targetLayer.name}`} ${imported.locations.length} resolved CSV location${imported.locations.length === 1 ? "" : "s"}.`,
         imported.issues.length
           ? `${imported.issues.length} unresolved or malformed row${imported.issues.length === 1 ? " was" : "s were"} excluded and reported.`
           : "Every nonblank CSV row resolved successfully.",
@@ -223,17 +247,104 @@ export function buildMcpProposal(
     };
   }
 
+  if (operation === "stage_layer_create") {
+    const name = text(input.name, "");
+    if (!name) throw new Error("A layer name is required.");
+    const layer = createMapLayer(name, {
+      description: text(input.description, ""),
+      visible: input.visible !== false,
+    });
+    const candidate = structuredClone(current);
+    candidate.layers.push(layer);
+    const next = normalizeCandidate(candidate, current);
+    return {
+      proposal: proposal(current, next, operation, requestedSummary, [
+        `Create ${layer.name} as layer ${next.layers.length}.`,
+        "The new layer starts empty and can be targeted by later location proposals.",
+      ]),
+    };
+  }
+
+  if (operation === "stage_layer_update") {
+    const existing = layerById(current, input.layerId);
+    const patch = knownPatch<MapLayer>(input.patch, LAYER_KEYS, "Layer patch");
+    const candidate = structuredClone(current);
+    candidate.layers = candidate.layers.map((layer) => layer.id === existing.id ? { ...layer, ...patch, id: layer.id } : layer);
+    const next = normalizeCandidate(candidate, current);
+    return {
+      proposal: proposal(current, next, operation, requestedSummary, [
+        `Update layer ${existing.name}.`,
+        `Review ${Object.keys(patch).join(", ")}.`,
+      ]),
+    };
+  }
+
+  if (operation === "stage_layer_remove") {
+    const existing = layerById(current, input.layerId);
+    if (current.layers.length === 1) throw new Error("The only layer in a project cannot be removed.");
+    const removedLocations = current.locations.filter((location) => location.layerId === existing.id);
+    const candidate = structuredClone(current);
+    candidate.layers = candidate.layers.filter((layer) => layer.id !== existing.id);
+    candidate.locations = candidate.locations.filter((location) => location.layerId !== existing.id);
+    const next = normalizeCandidate(candidate, current);
+    return {
+      proposal: proposal(current, next, operation, requestedSummary, [
+        `Remove layer ${existing.name}.`,
+        `Also remove its ${removedLocations.length} location${removedLocations.length === 1 ? "" : "s"}.`,
+      ]),
+    };
+  }
+
+  if (operation === "stage_locations_assign_layer") {
+    const targetLayer = layerById(current, input.layerId);
+    if (!Array.isArray(input.locationIds) || input.locationIds.length === 0) throw new Error("At least one location ID is required.");
+    const ids = new Set(input.locationIds.filter((id): id is string => typeof id === "string"));
+    const found = current.locations.filter((location) => ids.has(location.id));
+    if (found.length !== ids.size) throw new Error("One or more requested locations were not found.");
+    const candidate = structuredClone(current);
+    candidate.locations = candidate.locations.map((location) => ids.has(location.id) ? { ...location, layerId: targetLayer.id } : location);
+    const next = normalizeCandidate(candidate, current);
+    return {
+      proposal: proposal(current, next, operation, requestedSummary, [
+        `Assign ${found.length} location${found.length === 1 ? "" : "s"} to ${targetLayer.name}.`,
+        "Coordinates, labels, and saved per-location styles remain unchanged.",
+      ]),
+    };
+  }
+
+  if (operation === "stage_shared_pin_style_update") {
+    const patch = knownPatch<SharedPinStyle>(input.patch, SHARED_PIN_STYLE_KEYS, "Shared pin style patch");
+    const candidate = structuredClone(current);
+    candidate.sharedPinStyle = { ...candidate.sharedPinStyle, ...patch };
+    const next = normalizeCandidate(candidate, current);
+    return {
+      proposal: proposal(current, next, operation, requestedSummary, [
+        `Review shared pin ${Object.keys(patch).join(", ")}.`,
+        next.sharedPinStyle.enabled
+          ? `All ${next.locations.length} locations will render with one effective pin style across every layer.`
+          : "Per-location pin styles will be used.",
+      ]),
+    };
+  }
+
   if (operation === "stage_custom_pin_import") {
     const svg = typeof input.svg === "string" ? input.svg : "";
     const name = text(input.name, "Custom pin");
     const assignLocationId = typeof input.assignLocationId === "string" ? input.assignLocationId : "";
+    const assignToAll = input.assignToAll === true;
+    if (assignToAll && assignLocationId) {
+      throw new Error("Choose either one location or all locations for the custom pin assignment, not both.");
+    }
     if (assignLocationId && !current.locations.some((location) => location.id === assignLocationId)) {
       throw new Error("The location selected for the custom pin was not found.");
     }
     const { design, removedItems } = createCustomPinDesign(svg, `${name}.svg`);
     const candidate = structuredClone(current);
     candidate.customPins = [...candidate.customPins, design];
-    if (assignLocationId) {
+    if (assignToAll) {
+      candidate.locations = candidate.locations.map((location) => ({ ...location, customPinId: design.id }));
+      candidate.sharedPinStyle = { ...candidate.sharedPinStyle, enabled: true, customPinId: design.id };
+    } else if (assignLocationId) {
       candidate.locations = candidate.locations.map((location) =>
         location.id === assignLocationId ? { ...location, customPinId: design.id } : location,
       );
@@ -242,7 +353,11 @@ export function buildMcpProposal(
     return {
       proposal: proposal(current, next, operation, requestedSummary, [
         `Embed ${design.name} as a sanitized custom SVG pin.`,
-        assignLocationId ? "Assign it to one selected location." : "Add it to the project pin library without assigning it yet.",
+        assignToAll
+          ? `Assign it to all ${candidate.locations.length} locations.`
+          : assignLocationId
+            ? "Assign it to one selected location."
+            : "Add it to the project pin library without assigning it yet.",
         removedItems ? `Remove ${removedItems} unsupported or unsafe SVG item${removedItems === 1 ? "" : "s"}.` : "No SVG elements or attributes needed removal.",
       ]),
       removedSvgItems: removedItems,

@@ -1,5 +1,5 @@
 export const PROJECT_SCHEMA = "usa-map-studio/project";
-export const PROJECT_SCHEMA_VERSION = 2;
+export const PROJECT_SCHEMA_VERSION = 4;
 
 export type PinType = "pin" | "circle" | "square" | "diamond" | "star";
 export type LabelPosition = "right" | "left" | "above" | "below";
@@ -12,8 +12,26 @@ export interface CustomPinDesign {
   createdAt: string;
 }
 
+export interface MapLayer {
+  id: string;
+  name: string;
+  description: string;
+  visible: boolean;
+  createdAt: string;
+}
+
+export interface SharedPinStyle {
+  enabled: boolean;
+  pinType: PinType;
+  customPinId: string | null;
+  pinColor: string;
+  pinSize: number;
+}
+
 export interface MapLocation {
   id: string;
+  layerId: string;
+  visible: boolean;
   city: string;
   state: string;
   latitude: number;
@@ -57,6 +75,8 @@ export interface UsaMapProject {
     updatedAt: string;
   };
   map: MapSettings;
+  layers: MapLayer[];
+  sharedPinStyle: SharedPinStyle;
   customPins: CustomPinDesign[];
   locations: MapLocation[];
 }
@@ -116,6 +136,18 @@ export interface UsaMapDesktopApi {
     address: string | null;
     runtimeFile: string;
   }>;
+  getAutosaveProject(): Promise<{
+    text: string;
+    projectFilePath: string | null;
+    recoveryPath: string;
+  } | null>;
+  autosaveProject(payload: {
+    text: string;
+  }): Promise<{
+    projectFilePath: string | null;
+    recoveryPath: string;
+  }>;
+  resetAutosaveTarget(): Promise<{ reset: true }>;
   onMcpCommand(
     handler: (request: DesktopMcpCommand) => Promise<unknown> | unknown,
   ): () => void;

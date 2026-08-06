@@ -15,6 +15,10 @@ test("Electron renderer keeps Node integration disabled", () => {
   assert.match(main, /randomBytes\(32\)/);
   assert.match(main, /mode: 0o600/);
   assert.match(main, /mcpUnauthorizedBlocked/);
+  assert.match(main, /async function atomicWriteText/);
+  assert.match(main, /project:autosave/);
+  assert.match(main, /project:reset-autosave-target/);
+  assert.match(main, /usa-map-studio-isolated-/);
 });
 
 test("source setup scripts build and smoke-test without creating installers", () => {

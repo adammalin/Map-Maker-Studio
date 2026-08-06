@@ -1,9 +1,11 @@
 import { forwardRef, useMemo, useRef } from "react";
 import type { Feature, Geometry } from "geojson";
 import { STATE_BY_FIPS } from "../data/state-metadata";
-import { customPinInnerMarkup, customPinTransform } from "../lib/custom-pin";
+import { customPinTransform, scopedCustomPinInnerMarkup } from "../lib/custom-pin";
+import { effectivePinStyle, svgLayerId, visibleLocations } from "../lib/layers";
 import { countyBoundaries, mapPath as path, projection, stateBoundaries, states } from "../lib/map-geometry";
 import type { CustomPinDesign, MapLocation, UsaMapProject } from "../types";
+import type { EffectivePinStyle } from "../lib/layers";
 
 interface MapCanvasProps {
   project: UsaMapProject;
@@ -33,36 +35,36 @@ function starPoints(radius: number): string {
   }).join(" ");
 }
 
-function PinSymbol({ location, customPin }: { location: MapLocation; customPin?: CustomPinDesign }) {
-  const size = location.pinSize;
+function PinSymbol({ location, style, customPin }: { location: MapLocation; style: EffectivePinStyle; customPin?: CustomPinDesign }) {
+  const size = style.pinSize;
   if (customPin) {
     return (
       <g
         className="custom-pin-symbol"
         data-custom-pin-id={customPin.id}
         transform={customPinTransform(customPin.viewBox, size)}
-        style={{ color: location.pinColor }}
+        style={{ color: style.pinColor }}
         pointerEvents="none"
-        dangerouslySetInnerHTML={{ __html: customPinInnerMarkup(customPin) }}
+        dangerouslySetInnerHTML={{ __html: scopedCustomPinInnerMarkup(customPin, `map-${location.id}`) }}
       />
     );
   }
   const common = {
-    fill: location.pinColor,
+    fill: style.pinColor,
     stroke: "#ffffff",
     strokeWidth: Math.max(1.8, size * 0.13),
     vectorEffect: "non-scaling-stroke" as const,
   };
-  if (location.pinType === "circle") {
+  if (style.pinType === "circle") {
     return <circle r={size * 0.48} {...common} />;
   }
-  if (location.pinType === "square") {
+  if (style.pinType === "square") {
     return <rect x={-size * 0.46} y={-size * 0.46} width={size * 0.92} height={size * 0.92} {...common} />;
   }
-  if (location.pinType === "diamond") {
+  if (style.pinType === "diamond") {
     return <polygon points={`0,${-size * 0.62} ${size * 0.52},0 0,${size * 0.62} ${-size * 0.52},0`} {...common} />;
   }
-  if (location.pinType === "star") {
+  if (style.pinType === "star") {
     return <polygon points={starPoints(size * 0.68)} {...common} />;
   }
   return (
@@ -90,10 +92,20 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(function MapC
 ) {
   const draggingLocation = useRef<string | null>(null);
   const panning = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number } | null>(null);
-  const projectedLocations = useMemo(() => project.locations.map((location) => ({
-    location,
-    point: projection([location.longitude, location.latitude]),
-  })).filter((entry): entry is { location: MapLocation; point: [number, number] } => Boolean(entry.point)), [project.locations]);
+  const projectedLayers = useMemo(() => project.layers.map((layer) => ({
+    layer,
+    locations: layer.visible
+      ? project.locations
+        .filter((location) => location.layerId === layer.id && location.visible)
+        .map((location) => ({
+          location,
+          style: effectivePinStyle(project, location),
+          point: projection([location.longitude, location.latitude]),
+        }))
+        .filter((entry): entry is { location: MapLocation; style: EffectivePinStyle; point: [number, number] } => Boolean(entry.point))
+      : [],
+  })), [project]);
+  const mappedLocations = visibleLocations(project);
   const customPins = useMemo(
     () => new Map(project.customPins.map((design) => [design.id, design])),
     [project.customPins],
@@ -153,7 +165,7 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(function MapC
       }}
     >
       <title id="map-title">{project.map.title || project.project.name}</title>
-      <desc id="map-description">United States map with {project.locations.length} plotted locations.</desc>
+      <desc id="map-description">United States map with {mappedLocations.length} visible plotted locations across {project.layers.filter((layer) => layer.visible).length} visible layers.</desc>
       <rect
         width="1200"
         height="720"
@@ -265,18 +277,28 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(function MapC
             );
           }) : null}
         </g>
-        <g aria-label="Locations">
-          {projectedLocations.map(({ location, point: [x, y] }) => {
+        <g aria-label="Location layers" data-map-layers="true">
+          {projectedLayers.map(({ layer, locations }) => layer.visible ? (
+            <g
+              key={layer.id}
+              id={svgLayerId(layer)}
+              aria-label={layer.name}
+              data-map-layer="true"
+              data-layer-id={layer.id}
+              data-layer-name={layer.name}
+            >
+          {locations.map(({ location, style, point: [x, y] }) => {
             const selected = location.id === selectedLocationId;
             const offset = labelOffsets[location.labelPosition];
-            const labelX = offset.x + (offset.anchor === "start" ? location.pinSize * 0.25 : offset.anchor === "end" ? -location.pinSize * 0.25 : 0);
+            const labelX = offset.x + (offset.anchor === "start" ? style.pinSize * 0.25 : offset.anchor === "end" ? -style.pinSize * 0.25 : 0);
             return (
               <g
                 key={location.id}
                 className={`map-location${selected ? " is-selected" : ""}`}
                 transform={`translate(${x} ${y})`}
                 role="button"
-                aria-label={`${location.label} at ${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}`}
+                data-layer-id={layer.id}
+                aria-label={`${location.label} in ${layer.name} at ${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}`}
                 onClick={(event) => {
                   event.stopPropagation();
                   onSelectState(null);
@@ -292,9 +314,9 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(function MapC
                 }}
               >
                 {selected ? (
-                  <circle r={location.pinSize * 0.82} fill="none" stroke="#fe5000" strokeWidth="2.4" strokeDasharray="4 3" vectorEffect="non-scaling-stroke" data-editor-only="true" />
+                  <circle r={style.pinSize * 0.82} fill="none" stroke="#fe5000" strokeWidth="2.4" strokeDasharray="4 3" vectorEffect="non-scaling-stroke" data-editor-only="true" />
                 ) : null}
-                <PinSymbol location={location} customPin={location.customPinId ? customPins.get(location.customPinId) : undefined} />
+                <PinSymbol location={location} style={style} customPin={style.customPinId ? customPins.get(style.customPinId) : undefined} />
                 {project.map.showLocationLabels && location.showLabel ? (
                   <g aria-hidden="true" pointerEvents="none">
                     <text
@@ -332,14 +354,16 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(function MapC
               </g>
             );
           })}
+            </g>
+          ) : null)}
         </g>
       </g>
       {project.map.showLegend ? (
         <g transform="translate(54 684)" aria-label="Map legend">
           <rect x="0" y="-24" width="286" height="34" fill="#ffffff" stroke="#c8d3ce" strokeWidth="1" />
-          <circle cx="18" cy="-7" r="5" fill="#00662c" />
+          <circle cx="18" cy="-7" r="5" fill={project.sharedPinStyle.enabled ? project.sharedPinStyle.pinColor : "#00662c"} />
           <text x="31" y="-3" fill="#373a36" fontFamily="Aptos, Arial, sans-serif" fontSize="9.5" fontWeight="700">
-            {project.locations.length} mapped location{project.locations.length === 1 ? "" : "s"}
+            {mappedLocations.length} visible location{mappedLocations.length === 1 ? "" : "s"}
           </text>
           <line x1="148" x2="167" y1="-7" y2="-7" stroke={project.map.borderColor} strokeWidth="1.4" />
           <text x="175" y="-3" fill="#526966" fontFamily="Aptos, Arial, sans-serif" fontSize="8.5" fontWeight="600">

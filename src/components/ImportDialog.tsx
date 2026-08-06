@@ -1,15 +1,18 @@
 import { CheckCircle, FileCsv, WarningDiamond, X } from "@phosphor-icons/react";
-import type { ImportResult } from "../types";
+import type { ImportResult, MapLayer } from "../types";
 
 interface ImportDialogProps {
   result: ImportResult;
   fileName: string;
+  layers: MapLayer[];
+  targetLayerId: string;
+  onTargetLayerChange(id: string): void;
   onAdd(): void;
-  onReplace(): void;
+  onReplaceLayer(): void;
   onClose(): void;
 }
 
-export function ImportDialog({ result, fileName, onAdd, onReplace, onClose }: ImportDialogProps) {
+export function ImportDialog({ result, fileName, layers, targetLayerId, onTargetLayerChange, onAdd, onReplaceLayer, onClose }: ImportDialogProps) {
   return (
     <div className="dialog-backdrop" role="presentation">
       <section className="dialog" role="dialog" aria-modal="true" aria-labelledby="import-title" data-testid="import-dialog">
@@ -25,6 +28,7 @@ export function ImportDialog({ result, fileName, onAdd, onReplace, onClose }: Im
             <div><FileCsv size={22} /><strong>{result.totalRows}</strong><span>CSV rows</span></div>
           </div>
           <p className="dialog__intro">City/state rows without coordinates were matched against the bundled 2025 Census place index. Supplied coordinates were kept as entered.</p>
+          <label className="import-layer-field"><span>Import into layer</span><select value={targetLayerId} onChange={(event) => onTargetLayerChange(event.target.value)}>{layers.map((layer) => <option key={layer.id} value={layer.id}>{layer.name}</option>)}</select></label>
           {result.issues.length ? (
             <div className="issue-table" role="region" aria-label="Rows that need attention">
               <div className="issue-table__head"><span>Row</span><span>Place</span><span>Reason</span></div>
@@ -39,7 +43,7 @@ export function ImportDialog({ result, fileName, onAdd, onReplace, onClose }: Im
         </div>
         <footer className="dialog__footer">
           <button type="button" className="button button--secondary" onClick={onClose}>Cancel</button>
-          <button type="button" className="button button--secondary" onClick={onReplace} disabled={!result.locations.length}>Replace current list</button>
+          <button type="button" className="button button--secondary" onClick={onReplaceLayer} disabled={!result.locations.length}>Replace target layer</button>
           <button type="button" className="button button--primary" onClick={onAdd} disabled={!result.locations.length}>Add {result.locations.length} locations</button>
         </footer>
       </section>

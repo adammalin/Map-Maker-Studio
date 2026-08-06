@@ -8,6 +8,9 @@ const { randomBytes, randomUUID, timingSafeEqual } = require("node:crypto");
 const projectRoot = path.resolve(__dirname, "..");
 const smokeTest = process.env.USA_MAP_STUDIO_SMOKE_TEST === "1";
 const capturePath = process.env.USA_MAP_STUDIO_CAPTURE_PATH || "";
+if (smokeTest || capturePath) {
+  app.setPath("userData", path.join(app.getPath("temp"), `usa-map-studio-isolated-${process.pid}`));
+}
 const MCP_RUNTIME_FILE_NAME = "mcp-runtime.json";
 const MCP_MAX_BODY_BYTES = 5_000_000;
 const mcpToken = randomBytes(32).toString("hex");
@@ -16,9 +19,45 @@ let quitting = false;
 let mcpServer = null;
 let mcpAddress = null;
 const pendingMcpCommands = new Map();
+let activeProjectFilePath = null;
+let projectAutosaveQueue = Promise.resolve();
 
 function mcpRuntimePath() {
   return path.join(app.getPath("userData"), MCP_RUNTIME_FILE_NAME);
+}
+
+function autosaveDirectory() {
+  return path.join(app.getPath("userData"), "autosave");
+}
+
+function autosaveRecoveryPath() {
+  return path.join(autosaveDirectory(), "current-project.usmap.json");
+}
+
+function autosaveMetadataPath() {
+  return path.join(autosaveDirectory(), "current-project.meta.json");
+}
+
+function isProjectFilePath(value) {
+  return typeof value === "string" && path.isAbsolute(value) && value.toLowerCase().endsWith(".json");
+}
+
+async function atomicWriteText(target, text) {
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  const temporary = `${target}.${process.pid}.${randomUUID()}.tmp`;
+  await fs.writeFile(temporary, text, { encoding: "utf8", mode: 0o600 });
+  await fs.rename(temporary, target);
+}
+
+function validateAutosaveText(value) {
+  const text = String(value ?? "");
+  if (Buffer.byteLength(text, "utf8") > 12_000_000) throw new Error("The project exceeds the 12 MB autosave limit.");
+  let parsed;
+  try { parsed = JSON.parse(text); } catch { throw new Error("Autosave received invalid project JSON."); }
+  if (parsed?.schema !== "usa-map-studio/project" || !Array.isArray(parsed.locations)) {
+    throw new Error("Autosave received an unrelated JSON document.");
+  }
+  return text;
 }
 
 function tokenMatches(value) {
@@ -174,6 +213,7 @@ function registerIpc() {
     });
     if (result.canceled || !result.filePaths[0]) return { canceled: true };
     const filePath = result.filePaths[0];
+    if (kind === "project") activeProjectFilePath = filePath;
     return {
       canceled: false,
       filePath,
@@ -190,7 +230,51 @@ function registerIpc() {
     });
     if (result.canceled || !result.filePath) return { canceled: true };
     await fs.writeFile(result.filePath, String(payload.text), "utf8");
+    if (payload.kind === "project") activeProjectFilePath = result.filePath;
     return { canceled: false, filePath: result.filePath };
+  });
+
+  ipcMain.handle("project:get-autosave", async () => {
+    try {
+      const [text, metadataText] = await Promise.all([
+        fs.readFile(autosaveRecoveryPath(), "utf8"),
+        fs.readFile(autosaveMetadataPath(), "utf8").catch(() => "{}"),
+      ]);
+      const metadata = JSON.parse(metadataText);
+      activeProjectFilePath = isProjectFilePath(metadata.projectFilePath) ? metadata.projectFilePath : null;
+      return {
+        text,
+        projectFilePath: activeProjectFilePath,
+        recoveryPath: autosaveRecoveryPath(),
+      };
+    } catch {
+      activeProjectFilePath = null;
+      return null;
+    }
+  });
+
+  ipcMain.handle("project:autosave", async (_event, payload) => {
+    const text = validateAutosaveText(payload?.text);
+    const task = async () => {
+      await atomicWriteText(autosaveRecoveryPath(), text);
+      if (activeProjectFilePath) await atomicWriteText(activeProjectFilePath, text);
+      await atomicWriteText(autosaveMetadataPath(), `${JSON.stringify({
+        projectFilePath: activeProjectFilePath,
+        recoveryPath: autosaveRecoveryPath(),
+        savedAt: new Date().toISOString(),
+      }, null, 2)}\n`);
+      return {
+        projectFilePath: activeProjectFilePath,
+        recoveryPath: autosaveRecoveryPath(),
+      };
+    };
+    projectAutosaveQueue = projectAutosaveQueue.catch(() => undefined).then(task);
+    return projectAutosaveQueue;
+  });
+
+  ipcMain.handle("project:reset-autosave-target", () => {
+    activeProjectFilePath = null;
+    return { reset: true };
   });
 
   ipcMain.handle("file:save-binary", async (_event, payload) => {
@@ -225,6 +309,8 @@ function registerIpc() {
 }
 
 async function runSmoke(window) {
+  const smokeProjectFilePath = path.join(autosaveDirectory(), "smoke-bound-project.usmap.json");
+  activeProjectFilePath = smokeProjectFilePath;
   const result = await window.webContents.executeJavaScript(`(() => {
     const shell = document.querySelector('[data-testid="studio-shell"]');
     const svg = document.querySelector('[data-testid="map-svg"]');
@@ -269,6 +355,91 @@ async function runSmoke(window) {
     rows: document.querySelectorAll('.location-row').length,
     overflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth,
   }))()`);
+  const locationVisibilityBefore = await window.webContents.executeJavaScript(`(() => ({
+    pins: document.querySelectorAll('.map-location').length,
+    buttons: document.querySelectorAll('.location-row__visibility').length,
+    hiddenRows: document.querySelectorAll('.location-row.is-location-hidden').length,
+  }))()`);
+  await window.webContents.executeJavaScript(`document.querySelector('.location-row__visibility')?.click()`);
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  const locationVisibilityHidden = await window.webContents.executeJavaScript(`(() => ({
+    pins: document.querySelectorAll('.map-location').length,
+    rows: document.querySelectorAll('.location-row').length,
+    hiddenRows: document.querySelectorAll('.location-row.is-location-hidden').length,
+    hiddenBadge: document.querySelector('.location-row.is-location-hidden .location-row__hidden')?.textContent,
+  }))()`);
+  await window.webContents.executeJavaScript(`document.querySelector('.location-row__visibility')?.click()`);
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  const locationVisibilityRestored = await window.webContents.executeJavaScript(`(() => ({
+    pins: document.querySelectorAll('.map-location').length,
+    hiddenRows: document.querySelectorAll('.location-row.is-location-hidden').length,
+  }))()`);
+  result.locationVisibility = locationVisibilityBefore.pins === locationsMode.rows &&
+    locationVisibilityBefore.buttons === locationsMode.rows && locationVisibilityBefore.hiddenRows === 0 &&
+    locationVisibilityHidden.pins === locationsMode.rows - 1 && locationVisibilityHidden.rows === locationsMode.rows &&
+    locationVisibilityHidden.hiddenRows === 1 && /location hidden/i.test(locationVisibilityHidden.hiddenBadge || "") &&
+    locationVisibilityRestored.pins === locationsMode.rows && locationVisibilityRestored.hiddenRows === 0;
+  const locationDeleteBefore = await window.webContents.executeJavaScript(`(() => ({
+    rows: document.querySelectorAll('.location-row').length,
+    removeButtons: document.querySelectorAll('.location-row__remove').length,
+    selectedLabel: document.querySelector('.location-row.is-active strong')?.textContent,
+  }))()`);
+  await window.webContents.executeJavaScript(`document.querySelectorAll('.location-row__remove')[1]?.click()`);
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  const locationDeleteAfter = await window.webContents.executeJavaScript(`(() => ({
+    rows: document.querySelectorAll('.location-row').length,
+    selectedLabel: document.querySelector('.location-row.is-active strong')?.textContent,
+    notice: document.querySelector('.prototype-notice p')?.textContent,
+  }))()`);
+  await window.webContents.executeJavaScript(`document.querySelector('.toolbar-actions__history .button:first-child')?.click()`);
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  const locationDeleteRestored = await window.webContents.executeJavaScript(`(() => ({
+    rows: document.querySelectorAll('.location-row').length,
+    removeButtons: document.querySelectorAll('.location-row__remove').length,
+  }))()`);
+  result.locationRowDelete = locationDeleteBefore.rows === locationDeleteBefore.removeButtons &&
+    locationDeleteAfter.rows === locationDeleteBefore.rows - 1 &&
+    locationDeleteAfter.selectedLabel === locationDeleteBefore.selectedLabel &&
+    /removed.*undo/i.test(locationDeleteAfter.notice || "") &&
+    locationDeleteRestored.rows === locationDeleteBefore.rows &&
+    locationDeleteRestored.removeButtons === locationDeleteBefore.removeButtons;
+  await window.webContents.executeJavaScript(`document.querySelector('[data-workspace-mode="layers"]')?.click()`);
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  const layerModeBefore = await window.webContents.executeJavaScript(`(() => ({
+    view: document.querySelector('[data-workspace-view]')?.getAttribute('data-workspace-view'),
+    heading: document.querySelector('[data-testid="workspace-mode-heading"] strong')?.textContent,
+    panel: Boolean(document.querySelector('[data-testid="layer-panel"]')),
+    inspector: Boolean(document.querySelector('[data-testid="layer-inspector"]')),
+    rows: document.querySelectorAll('.layer-row').length,
+    groups: document.querySelectorAll('[data-map-layer="true"]').length,
+    pins: document.querySelectorAll('.map-location').length,
+    overflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+  }))()`);
+  await window.webContents.executeJavaScript(`document.querySelector('.layer-panel .icon-button--primary')?.click()`);
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  const layerModeAdded = await window.webContents.executeJavaScript(`(() => ({
+    rows: document.querySelectorAll('.layer-row').length,
+    groups: document.querySelectorAll('[data-map-layer="true"]').length,
+    sharedStyle: Boolean(document.querySelector('[data-testid="shared-pin-style-toggle"]')),
+  }))()`);
+  await window.webContents.executeJavaScript(`document.querySelector('.layer-row .layer-row__visibility')?.click()`);
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  const layerModeHidden = await window.webContents.executeJavaScript(`(() => ({
+    pins: document.querySelectorAll('.map-location').length,
+    visibleGroups: document.querySelectorAll('[data-map-layer="true"]').length,
+  }))()`);
+  await window.webContents.executeJavaScript(`document.querySelector('.layer-row .layer-row__visibility')?.click()`);
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  const layerModeRestored = await window.webContents.executeJavaScript(`(() => ({
+    pins: document.querySelectorAll('.map-location').length,
+    groups: document.querySelectorAll('[data-map-layer="true"]').length,
+  }))()`);
+  result.layerWorkspaceFunctional = layerModeBefore.view === "layers" && layerModeBefore.heading === "Layer workspace" &&
+    layerModeBefore.panel && layerModeBefore.inspector && layerModeBefore.rows === 1 && layerModeBefore.groups === 1 &&
+    layerModeBefore.pins === locationDeleteBefore.rows && !layerModeBefore.overflowX &&
+    layerModeAdded.rows === 2 && layerModeAdded.groups === 2 && layerModeAdded.sharedStyle &&
+    layerModeHidden.pins === 0 && layerModeHidden.visibleGroups === 1 &&
+    layerModeRestored.pins === locationDeleteBefore.rows && layerModeRestored.groups === 2;
   await window.webContents.executeJavaScript(`document.querySelector('[data-workspace-mode="style"]')?.click()`);
   await new Promise((resolve) => setTimeout(resolve, 80));
   const styleMode = await window.webContents.executeJavaScript(`(() => ({
@@ -295,7 +466,7 @@ async function runSmoke(window) {
     mapMode.view === "map" && mapMode.heading === "Map editor" && !mapMode.locationPanel && mapMode.locationInspector && !mapMode.overflowX;
   await window.webContents.executeJavaScript(`document.querySelector('[data-workspace-mode="locations"]')?.click()`);
   await new Promise((resolve) => setTimeout(resolve, 80));
-  await window.webContents.executeJavaScript(`document.querySelector('.location-row')?.click()`);
+  await window.webContents.executeJavaScript(`document.querySelector('.location-row__select')?.click()`);
   await new Promise((resolve) => setTimeout(resolve, 80));
   await window.webContents.executeJavaScript(`document.querySelector('[data-workspace-mode="map"]')?.click()`);
   await new Promise((resolve) => setTimeout(resolve, 80));
@@ -353,7 +524,7 @@ async function runSmoke(window) {
     dirty: document.querySelector('.save-status')?.textContent,
   }))()`);
   result.mcpProposalAppliedByUser = appliedState.proposalGone &&
-    appliedState.countiesAfterApply === "true" && appliedState.dirty === "Unsaved";
+    appliedState.countiesAfterApply === "true" && /save pending|saving|recovery saved|autosaved/i.test(appliedState.dirty || "");
   const currentResponse = await fetch(new URL("command", mcpAddress), {
     method: "POST",
     headers: {
@@ -373,9 +544,9 @@ async function runSmoke(window) {
     body: JSON.stringify({
       operation: "stage_custom_pin_import",
       input: {
-        name: "Smoke-test triangle",
-        svg: '<svg viewBox="0 0 24 24" onload="bad()"><script>bad()</script><path d="M12 1L23 23H1Z" fill="currentColor"/></svg>',
-        assignLocationId: currentProject?.locations?.[0]?.id,
+        name: "Smoke-test Illustrator gradient",
+        svg: '<svg viewBox="0 0 24 24" onload="bad()"><defs><style>.st0 { fill: url(#linear-gradient); stroke: #f9a013; stroke-width: 1.25; }</style><linearGradient id="linear-gradient" x1="12" y1="0" x2="12" y2="24" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#f9a013"/><stop offset="1" stop-color="#fefcee"/></linearGradient></defs><script>bad()</script><circle class="st0" cx="12" cy="12" r="11"/></svg>',
+        assignToAll: true,
         expectedUpdatedAt: currentProject?.project?.updatedAt,
         summary: "Smoke-test embedded custom pin",
       },
@@ -429,11 +600,19 @@ async function runSmoke(window) {
     }
     return {
       proposalGone: !document.querySelector('[data-testid="ai-proposal-banner"]'),
-      customPin: Boolean(document.querySelector('.custom-pin-symbol path')),
-      exportMarkupIncludesCustomPin: /custom-pin-symbol/.test(exportMarkup) && /currentColor/.test(exportMarkup),
+      customPin: Boolean(document.querySelector('.custom-pin-symbol circle')),
+      customPinCount: document.querySelectorAll('.custom-pin-symbol').length,
+      scopedGradientCount: document.querySelectorAll('.custom-pin-symbol linearGradient[id^="pin-map-"]').length,
+      livePinFill: document.querySelector('.custom-pin-symbol circle')?.getAttribute('fill') || null,
+      exportMarkupIncludesCustomPin: /custom-pin-symbol/.test(exportMarkup) &&
+        /fill="url\\(#pin-map-[^)]+-linear-gradient\\)"/.test(exportMarkup),
+      exportGradientReference: exportMarkup.match(/fill="url\\([^)]+\\)"/)?.[0] || null,
       exportMarkupUsesLayeredLabels: /data-label-halo="true"/.test(exportMarkup) &&
         /data-label-text="true"/.test(exportMarkup) && !/paint-order/i.test(exportMarkup),
+      exportLayerGroups: (exportMarkup.match(/data-map-layer="true"/g) || []).length,
       customPinRasterized: rasterized,
+      deleteButtonWidth: document.querySelector('.custom-pin-card__delete')?.getBoundingClientRect().width || 0,
+      deleteIconWidth: document.querySelector('.custom-pin-card__delete svg')?.getBoundingClientRect().width || 0,
     };
   })()`);
   const finalProjectResponse = await fetch(new URL("command", mcpAddress), {
@@ -447,18 +626,64 @@ async function runSmoke(window) {
   const finalProjectBody = await finalProjectResponse.json();
   const embeddedDesign = finalProjectBody?.result?.project?.customPins?.[0];
   result.customPinEmbedded = customAppliedState.proposalGone && customAppliedState.customPin &&
-    finalProjectBody?.result?.project?.schemaVersion === 2 &&
-    finalProjectBody?.result?.project?.locations?.[0]?.customPinId === embeddedDesign?.id &&
-    typeof embeddedDesign?.svg === "string" && embeddedDesign.svg.includes("currentColor") &&
+    finalProjectBody?.result?.project?.schemaVersion === 4 &&
+    finalProjectBody?.result?.project?.layers?.length === 2 &&
+    finalProjectBody?.result?.project?.sharedPinStyle?.enabled === true &&
+    finalProjectBody?.result?.project?.sharedPinStyle?.customPinId === embeddedDesign?.id &&
+    finalProjectBody?.result?.project?.locations?.every((location) => location.customPinId === embeddedDesign?.id) &&
+    typeof embeddedDesign?.svg === "string" && embeddedDesign.svg.includes('fill="url(#linear-gradient)"') &&
     !/script|onload/i.test(embeddedDesign.svg);
+  result.customPinAppliedToAll = customAppliedState.customPinCount === currentProject.locations.length &&
+    customAppliedState.scopedGradientCount === currentProject.locations.length;
+  result.customPinDeleteControl = customAppliedState.deleteButtonWidth === 30 && customAppliedState.deleteIconWidth === 15;
+  result.customPinExportMarkup = customAppliedState.exportMarkupIncludesCustomPin;
+  result.customPinExportGradientReference = customAppliedState.exportGradientReference;
+  result.customPinLiveFill = customAppliedState.livePinFill;
+  result.customPinRasterized = customAppliedState.customPinRasterized;
   result.customPinExports = customAppliedState.exportMarkupIncludesCustomPin && customAppliedState.customPinRasterized;
+  result.exportLayerGroups = customAppliedState.exportLayerGroups;
   result.svgLabelExportLayered = customAppliedState.exportMarkupUsesLayeredLabels;
+  await new Promise((resolve) => setTimeout(resolve, 420));
+  try {
+    const autosavedProject = JSON.parse(await fs.readFile(autosaveRecoveryPath(), "utf8"));
+    const boundProject = JSON.parse(await fs.readFile(smokeProjectFilePath, "utf8"));
+    const autosaveMetadata = JSON.parse(await fs.readFile(autosaveMetadataPath(), "utf8"));
+    result.jsonAutosave = autosavedProject.schemaVersion === 4 &&
+      autosavedProject.locations?.length === currentProject.locations.length &&
+      autosavedProject.layers?.length === 2 && autosavedProject.customPins?.length === 1 &&
+      boundProject.project?.updatedAt === autosavedProject.project?.updatedAt &&
+      boundProject.locations?.length === autosavedProject.locations?.length &&
+      autosaveMetadata.recoveryPath === autosaveRecoveryPath() &&
+      autosaveMetadata.projectFilePath === smokeProjectFilePath;
+    result.autosaveRecoveryPath = autosaveRecoveryPath();
+    result.autosaveProjectFilePath = smokeProjectFilePath;
+  } catch (error) {
+    result.jsonAutosave = false;
+    result.autosaveError = error instanceof Error ? error.message : String(error);
+  }
+  await window.webContents.reload();
+  await new Promise((resolve) => setTimeout(resolve, 900));
+  const autosaveRestoredState = await window.webContents.executeJavaScript(`(() => ({
+    version: document.querySelector('.version-chip')?.textContent,
+    locationCount: document.querySelector('[data-workspace-mode="locations"] .nav-count')?.textContent,
+    layerCount: document.querySelector('[data-workspace-mode="layers"] .nav-count')?.textContent,
+    customPinCount: document.querySelectorAll('.custom-pin-symbol').length,
+    saveStatus: document.querySelector('.save-status')?.textContent,
+    pendingProposal: Boolean(document.querySelector('[data-testid="ai-proposal-banner"]')),
+  }))()`);
+  result.autosaveRestoredOnLaunch = autosaveRestoredState.version === "v0.4.1" &&
+    autosaveRestoredState.locationCount === String(currentProject.locations.length) &&
+    autosaveRestoredState.layerCount === "2" &&
+    autosaveRestoredState.customPinCount === currentProject.locations.length &&
+    /autosaved|save pending|saving/i.test(autosaveRestoredState.saveStatus || "") &&
+    !autosaveRestoredState.pendingProposal;
   if (capturePath) {
     await window.webContents.executeJavaScript(`document.querySelector('[data-workspace-mode="locations"]')?.click()`);
     await new Promise((resolve) => setTimeout(resolve, 120));
     await window.webContents.executeJavaScript(`(() => {
       const palette = document.querySelector('.brand-swatches');
       if (palette) palette.open = true;
+      document.querySelector('.custom-pin-card')?.scrollIntoView({ block: 'center' });
     })()`);
     await new Promise((resolve) => setTimeout(resolve, 180));
     const image = await window.webContents.capturePage();
@@ -471,9 +696,10 @@ async function runSmoke(window) {
     result.width > 400 && result.height > 240 &&
     !result.documentOverflowX && !result.documentOverflowY &&
     result.mcpBridge && result.mcpUnauthorizedBlocked && result.mcpLoopback &&
-    result.workspaceModesFunctional && result.mcpProposalStaged && result.mcpProposalAppliedByUser &&
-    result.customPinProposalStaged && result.customPinEmbedded && result.customPinExports && result.svgLabelExportLayered &&
-    result.ornlPaletteAvailable;
+    result.workspaceModesFunctional && result.layerWorkspaceFunctional && result.locationVisibility && result.locationRowDelete && result.mcpProposalStaged && result.mcpProposalAppliedByUser &&
+    result.customPinProposalStaged && result.customPinEmbedded && result.customPinAppliedToAll &&
+    result.customPinDeleteControl && result.customPinExports && result.exportLayerGroups === 2 && result.svgLabelExportLayered &&
+    result.ornlPaletteAvailable && result.jsonAutosave && result.autosaveRestoredOnLaunch;
   console.log(`USA_MAP_STUDIO_SMOKE ${JSON.stringify({ passed, ...result })}`);
   app.exit(passed ? 0 : 1);
 }
@@ -518,6 +744,8 @@ async function createWindow() {
   if (smokeTest) {
     await runSmoke(window);
   } else if (capturePath) {
+    await window.webContents.executeJavaScript(`document.querySelector('[data-workspace-mode="locations"]')?.click()`);
+    await new Promise((resolve) => setTimeout(resolve, 180));
     const image = await window.webContents.capturePage();
     await fs.mkdir(path.dirname(capturePath), { recursive: true });
     await fs.writeFile(capturePath, image.toPNG());

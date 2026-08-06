@@ -20,7 +20,7 @@ test("local MCP exposes bounded read and proposal tools with correct annotations
       if (operation === "get_app_status") {
         return {
           app: "USA Map Studio",
-          project: { id: "project-fixture", name: "Fixture map", updatedAt: "2026-08-06T12:00:00.000Z", locationCount: 2 },
+          project: { id: "project-fixture", name: "Fixture map", updatedAt: "2026-08-06T12:00:00.000Z", locationCount: 2, layerCount: 2 },
           dirty: false,
           pendingProposal: null,
         };
@@ -47,12 +47,18 @@ test("local MCP exposes bounded read and proposal tools with correct annotations
       "get_app_status",
       "get_current_project",
       "list_locations",
+      "list_layers",
       "validate_project",
       "stage_location_update",
       "stage_locations_add",
       "stage_locations_from_csv",
       "stage_locations_remove",
       "stage_map_style_update",
+      "stage_layer_create",
+      "stage_layer_update",
+      "stage_locations_assign_layer",
+      "stage_shared_pin_style_update",
+      "stage_layer_remove",
       "stage_custom_pin_import",
       "replace_project_draft",
     ]);

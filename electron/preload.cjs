@@ -12,6 +12,9 @@ contextBridge.exposeInMainWorld("usaMapDesktop", {
   saveBinaryFile: (payload) => ipcRenderer.invoke("file:save-binary", payload),
   openUserGuide: () => ipcRenderer.invoke("app:open-user-guide"),
   getMcpStatus: () => ipcRenderer.invoke("mcp:get-status"),
+  getAutosaveProject: () => ipcRenderer.invoke("project:get-autosave"),
+  autosaveProject: (payload) => ipcRenderer.invoke("project:autosave", payload),
+  resetAutosaveTarget: () => ipcRenderer.invoke("project:reset-autosave-target"),
   onMcpCommand: (handler) => {
     const listener = (_event, request) => {
       Promise.resolve()

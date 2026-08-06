@@ -2,6 +2,8 @@ import PptxGenJS from "pptxgenjs";
 import type { Feature, Geometry } from "geojson";
 import { STATE_BY_FIPS } from "../data/state-metadata";
 import type { MapLocation, UsaMapProject } from "../types";
+import type { EffectivePinStyle } from "./layers";
+import { effectivePinStyle, visibleLocations } from "./layers";
 import { countyBoundaries, mapPath, projection, stateBoundaries, states } from "./map-geometry";
 
 const CANVAS_WIDTH = 1200;
@@ -196,13 +198,15 @@ function addFreeform(
 function addMapPin(
   slide: PptxGenJS.Slide,
   location: MapLocation,
+  style: EffectivePinStyle,
   center: CanvasPoint,
   size: number,
+  objectPrefix: string,
 ): void {
-  const line = { color: "FFFFFF", width: Math.max(1.35, location.pinSize * 0.0975) };
-  const fill = { color: hex(location.pinColor) };
-  const objectName = `Pin - ${location.label}`;
-  if (location.pinType === "pin") {
+  const line = { color: "FFFFFF", width: Math.max(1.35, style.pinSize * 0.0975) };
+  const fill = { color: hex(style.pinColor) };
+  const objectName = `${objectPrefix}Pin - ${location.label}`;
+  if (style.pinType === "pin") {
     const width = size * 0.75;
     slide.addShape(SHAPE.teardrop, {
       x: center[0] - width / 2,
@@ -221,18 +225,18 @@ function addMapPin(
       h: size * 0.23,
       fill: { color: "FFFFFF" },
       line: { color: "FFFFFF", transparency: 100 },
-      objectName: `Pin center - ${location.label}`,
+      objectName: `${objectPrefix}Pin center - ${location.label}`,
     });
     return;
   }
-  const shape = location.pinType === "circle"
+  const shape = style.pinType === "circle"
     ? SHAPE.ellipse
-    : location.pinType === "square"
+    : style.pinType === "square"
       ? SHAPE.rect
-      : location.pinType === "diamond"
+      : style.pinType === "diamond"
         ? SHAPE.diamond
         : SHAPE.star5;
-  const multiplier = location.pinType === "star" ? 1.36 : location.pinType === "diamond" ? 1.24 : 0.96;
+  const multiplier = style.pinType === "star" ? 1.36 : style.pinType === "diamond" ? 1.24 : 0.96;
   const extent = size * multiplier;
   slide.addShape(shape, {
     x: center[0] - extent / 2,
@@ -375,49 +379,54 @@ export async function projectToPowerPoint(
   }
 
   const customPins = new Map(project.customPins.map((design) => [design.id, design]));
-  for (const location of project.locations) {
-    const point = projection([location.longitude, location.latitude]);
-    if (!point) continue;
-    const center = mapPointToSlide(point, viewport);
-    const pinSize = location.pinSize * CANVAS_SCALE * viewport.zoom;
-    const customPin = location.customPinId ? customPins.get(location.customPinId) : undefined;
-    if (customPin) {
-      slide.addImage({
-        data: svgDataUri(customPinSvg(customPin.svg, location.pinColor)),
-        x: center[0] - pinSize / 2,
-        y: center[1] - pinSize / 2,
-        w: pinSize,
-        h: pinSize,
-        objectName: `Custom pin - ${location.label}`,
-      });
-    } else {
-      addMapPin(slide, location, center, pinSize);
-    }
-    if (project.map.showLocationLabels && location.showLabel) {
-      const offset = labelOffsets[location.labelPosition];
-      const offsetX = offset.x + (offset.anchor === "start" ? location.pinSize * 0.25 : offset.anchor === "end" ? -location.pinSize * 0.25 : 0);
-      const [anchorX, anchorY] = mapPointToSlide([point[0] + offsetX, point[1] + offset.y], viewport);
-      const width = Math.max(0.72, Math.min(2.8, location.label.length * 0.075 * viewport.zoom));
-      const x = offset.anchor === "start" ? anchorX : offset.anchor === "end" ? anchorX - width : anchorX - width / 2;
-      slide.addText(location.label, {
-        x,
-        y: anchorY - 0.1,
-        w: width,
-        h: 0.2,
-        margin: 0,
-        align: offset.anchor === "middle" ? "center" : offset.anchor === "start" ? "left" : "right",
-        valign: "middle",
-        fontFace: "Aptos",
-        fontSize: Math.max(7, 8.6 * viewport.zoom),
-        bold: true,
-        color: hex(location.labelColor),
-        outline: { color: hex(project.map.labelHaloColor), size: 2 },
-        objectName: `Location label - ${location.label}`,
-      });
+  for (const [layerIndex, layer] of project.layers.entries()) {
+    if (!layer.visible) continue;
+    const objectPrefix = `[Layer ${layerIndex + 1}: ${layer.name}] `;
+    for (const location of project.locations.filter((candidate) => candidate.layerId === layer.id && candidate.visible)) {
+      const point = projection([location.longitude, location.latitude]);
+      if (!point) continue;
+      const style = effectivePinStyle(project, location);
+      const center = mapPointToSlide(point, viewport);
+      const pinSize = style.pinSize * CANVAS_SCALE * viewport.zoom;
+      const customPin = style.customPinId ? customPins.get(style.customPinId) : undefined;
+      if (customPin) {
+        slide.addImage({
+          data: svgDataUri(customPinSvg(customPin.svg, style.pinColor)),
+          x: center[0] - pinSize / 2,
+          y: center[1] - pinSize / 2,
+          w: pinSize,
+          h: pinSize,
+          objectName: `${objectPrefix}Custom pin - ${location.label}`,
+        });
+      } else {
+        addMapPin(slide, location, style, center, pinSize, objectPrefix);
+      }
+      if (project.map.showLocationLabels && location.showLabel) {
+        const offset = labelOffsets[location.labelPosition];
+        const offsetX = offset.x + (offset.anchor === "start" ? style.pinSize * 0.25 : offset.anchor === "end" ? -style.pinSize * 0.25 : 0);
+        const [anchorX, anchorY] = mapPointToSlide([point[0] + offsetX, point[1] + offset.y], viewport);
+        const width = Math.max(0.72, Math.min(2.8, location.label.length * 0.075 * viewport.zoom));
+        const x = offset.anchor === "start" ? anchorX : offset.anchor === "end" ? anchorX - width : anchorX - width / 2;
+        slide.addText(location.label, {
+          x,
+          y: anchorY - 0.1,
+          w: width,
+          h: 0.2,
+          margin: 0,
+          align: offset.anchor === "middle" ? "center" : offset.anchor === "start" ? "left" : "right",
+          valign: "middle",
+          fontFace: "Aptos",
+          fontSize: Math.max(7, 8.6 * viewport.zoom),
+          bold: true,
+          color: hex(location.labelColor),
+          objectName: `${objectPrefix}Location label - ${location.label}`,
+        });
+      }
     }
   }
 
   if (project.map.showLegend) {
+    const mappedLocations = visibleLocations(project);
     const [legendX, legendY] = canvasPointToSlide([54, 660]);
     const legendWidth = 286 * CANVAS_SCALE;
     const legendHeight = 34 * CANVAS_SCALE;
@@ -435,11 +444,11 @@ export async function projectToPowerPoint(
       y: legendY + 0.125,
       w: 0.1,
       h: 0.1,
-      fill: { color: "00662C" },
+      fill: { color: hex(project.sharedPinStyle.enabled ? project.sharedPinStyle.pinColor : "#00662c") },
       line: { color: "00662C", transparency: 100 },
       objectName: "Legend location symbol",
     });
-    slide.addText(`${project.locations.length} mapped location${project.locations.length === 1 ? "" : "s"}`, {
+    slide.addText(`${mappedLocations.length} visible location${mappedLocations.length === 1 ? "" : "s"}`, {
       x: legendX + 0.32,
       y: legendY + 0.085,
       w: 1.22,
@@ -473,7 +482,8 @@ export async function projectToPowerPoint(
     });
   }
 
-  slide.addNotes("[Sources]\nBoundary and place-coordinate data: U.S. Census Bureau 2025 Cartographic Boundary and Gazetteer files.\nMap composition: USA Map Studio project export.\nEditability: states, boundary layers, text, standard pins, and legend elements are separate PowerPoint objects. Imported custom SVG pins remain separate movable vector objects.");
+  const layerNotes = project.layers.map((layer, index) => `Layer ${index + 1}: ${layer.name} (${layer.visible ? "visible" : "hidden"})`).join("\n");
+  slide.addNotes(`[Sources]\nBoundary and place-coordinate data: U.S. Census Bureau 2025 Cartographic Boundary and Gazetteer files.\nMap composition: USA Map Studio project export.\n${layerNotes}\nEditability: states, boundaries, text, standard pins, and legend elements are separate PowerPoint objects. Visible location objects are prefixed with their layer name in PowerPoint's Selection Pane. Imported custom SVG pins remain separate movable vector objects.`);
   return pptx.write({ outputType: "arraybuffer" }) as Promise<ArrayBuffer>;
 }
 

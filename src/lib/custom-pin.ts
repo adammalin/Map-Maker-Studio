@@ -84,6 +84,7 @@ const ALLOWED_ATTRIBUTES = new Set([
   "offset",
   "stop-color",
   "stop-opacity",
+  "color",
   "gradientunits",
   "gradienttransform",
   "spreadmethod",
@@ -92,6 +93,33 @@ const ALLOWED_ATTRIBUTES = new Set([
   "fr",
   "href",
 ]);
+
+const SAFE_STYLE_PROPERTIES = new Set([
+  "fill",
+  "fill-opacity",
+  "fill-rule",
+  "stroke",
+  "stroke-width",
+  "stroke-linecap",
+  "stroke-linejoin",
+  "stroke-miterlimit",
+  "stroke-dasharray",
+  "stroke-dashoffset",
+  "stroke-opacity",
+  "clip-rule",
+  "clip-path",
+  "mask",
+  "opacity",
+  "vector-effect",
+  "stop-color",
+  "stop-opacity",
+  "color",
+]);
+
+interface SafeStyleRule {
+  className: string;
+  declarations: Array<[string, string]>;
+}
 
 export interface SanitizedCustomPin {
   svg: string;
@@ -130,6 +158,90 @@ function removeNode(node: XmlNode): void {
   node.parentNode?.removeChild(node);
 }
 
+function parseSafeStyleDeclarations(source: string): {
+  declarations: Array<[string, string]>;
+  removedItems: number;
+} {
+  const declarations: Array<[string, string]> = [];
+  let removedItems = 0;
+  for (const rawDeclaration of source.split(";")) {
+    const declaration = rawDeclaration.trim();
+    if (!declaration) continue;
+    const separator = declaration.indexOf(":");
+    if (separator < 1) {
+      removedItems += 1;
+      continue;
+    }
+    const name = declaration.slice(0, separator).trim().toLowerCase();
+    const value = declaration.slice(separator + 1).trim();
+    if (!SAFE_STYLE_PROPERTIES.has(name) || !safeAttributeValue(name, value)) {
+      removedItems += 1;
+      continue;
+    }
+    declarations.push([name, value]);
+  }
+  return { declarations, removedItems };
+}
+
+function inlineSafeSvgStyles(root: XmlElement): number {
+  const elements: XmlElement[] = [];
+  const styleElements: XmlElement[] = [];
+  const rules: SafeStyleRule[] = [];
+  let removedItems = 0;
+
+  function collect(element: XmlElement): void {
+    elements.push(element);
+    for (let index = 0; index < element.childNodes.length; index += 1) {
+      const child = element.childNodes.item(index);
+      if (child?.nodeType !== 1) continue;
+      const childElement = child as XmlElement;
+      if ((childElement.localName ?? childElement.nodeName).toLowerCase() === "style") {
+        styleElements.push(childElement);
+      } else {
+        collect(childElement);
+      }
+    }
+  }
+
+  collect(root);
+  for (const styleElement of styleElements) {
+    const css = (styleElement.textContent ?? "").replace(/\/\*[\s\S]*?\*\//g, "");
+    const rulePattern = /([^{}]+)\{([^{}]*)\}/g;
+    let match: RegExpExecArray | null;
+    while ((match = rulePattern.exec(css))) {
+      const parsed = parseSafeStyleDeclarations(match[2]);
+      removedItems += parsed.removedItems;
+      for (const selector of match[1].split(",")) {
+        const classMatch = selector.trim().match(/^\.([A-Za-z_][\w-]*)$/);
+        if (!classMatch) {
+          removedItems += 1;
+          continue;
+        }
+        rules.push({ className: classMatch[1], declarations: parsed.declarations });
+      }
+    }
+    removeNode(styleElement);
+  }
+
+  for (const element of elements) {
+    const classNames = new Set((element.getAttribute("class") ?? "").split(/\s+/).filter(Boolean));
+    for (const rule of rules) {
+      if (!classNames.has(rule.className)) continue;
+      for (const [name, value] of rule.declarations) element.setAttribute(name, value);
+    }
+    const inlineStyle = element.getAttribute("style");
+    if (inlineStyle) {
+      const parsed = parseSafeStyleDeclarations(inlineStyle);
+      removedItems += parsed.removedItems;
+      for (const [name, value] of parsed.declarations) element.setAttribute(name, value);
+      element.removeAttribute("style");
+    }
+    if (element.hasAttribute("class")) element.removeAttribute("class");
+  }
+
+  return removedItems;
+}
+
 export function sanitizeCustomPinSvg(source: string): SanitizedCustomPin {
   if (typeof source !== "string" || !source.trim()) throw new Error("The custom pin SVG is empty.");
   if (new TextEncoder().encode(source).byteLength > MAX_SVG_BYTES) {
@@ -155,7 +267,7 @@ export function sanitizeCustomPinSvg(source: string): SanitizedCustomPin {
   const viewBox = viewBoxValues.join(" ");
   let elementCount = 0;
   let visibleCount = 0;
-  let removedItems = 0;
+  let removedItems = inlineSafeSvgStyles(root);
 
   function clean(element: XmlElement, depth: number): void {
     if (depth > MAX_DEPTH) throw new Error("The custom pin SVG is nested too deeply.");
@@ -244,6 +356,25 @@ export function customPinInnerMarkup(design: CustomPinDesign): string {
   const start = design.svg.indexOf(">");
   const end = design.svg.toLowerCase().lastIndexOf("</svg>");
   return start >= 0 && end > start ? design.svg.slice(start + 1, end) : "";
+}
+
+function escapeRegularExpression(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+export function scopedCustomPinInnerMarkup(design: CustomPinDesign, instanceId: string): string {
+  let markup = customPinInnerMarkup(design);
+  const scope = instanceId.replace(/[^A-Za-z0-9_.:-]+/g, "-").replace(/^[^A-Za-z_]+/, "") || "instance";
+  const ids = [...markup.matchAll(/\bid="([A-Za-z_][\w:.-]*)"/g)].map((match) => match[1]);
+  for (const id of new Set(ids)) {
+    const scopedId = `pin-${scope}-${id}`;
+    const escapedId = escapeRegularExpression(id);
+    markup = markup
+      .replace(new RegExp(`\\bid="${escapedId}"`, "g"), `id="${scopedId}"`)
+      .replace(new RegExp(`url\\(\\s*#${escapedId}\\s*\\)`, "g"), `url(#${scopedId})`)
+      .replace(new RegExp(`\\bhref="#${escapedId}"`, "g"), `href="#${scopedId}"`);
+  }
+  return markup;
 }
 
 export function customPinTransform(viewBox: string, size: number): string {

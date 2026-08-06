@@ -7,9 +7,11 @@ USA Map Studio project files are UTF-8 JSON documents normally saved with the `.
 ```json
 {
   "schema": "usa-map-studio/project",
-  "schemaVersion": 2,
+  "schemaVersion": 4,
   "project": {},
   "map": {},
+  "layers": [],
+  "sharedPinStyle": {},
   "customPins": [],
   "locations": []
 }
@@ -34,17 +36,35 @@ USA Map Studio project files are UTF-8 JSON documents normally saved with the `.
 
 Colors are stored as six-digit hex values.
 
+## Layers
+
+`layers` is an ordered, non-empty array. Each layer contains:
+
+- stable `id`
+- user-facing `name`
+- optional `description`
+- `visible`, which controls the canvas plus SVG, PNG, and PowerPoint export
+- ISO 8601 `createdAt`
+
+Array order controls pin stacking. Every location references exactly one layer by `layerId`; dangling layer references are rejected. SVG exports retain one named `<g>` for each visible layer. PowerPoint has no Illustrator-style layer model, so each visible location object's Selection Pane name is prefixed with its layer number and name. Hidden layers remain in project JSON but are omitted from rendered exports.
+
+## Shared pin style
+
+`sharedPinStyle` contains `enabled`, `pinType`, `customPinId`, `pinColor`, and `pinSize`. When `enabled` is `true`, this project-wide style overrides the corresponding saved fields on every location at render and export time. This guarantees that separate data layers can look identical. When `false`, each location's saved pin style is used.
+
 ## Custom SVG pin library
 
 `customPins` is a project-level array. Each imported design contains a stable `id`, user-facing `name`, sanitized `svg` string, normalized `viewBox`, and `createdAt` timestamp. The SVG content is embedded directly in JSON; the project never depends on the original SVG file path.
 
-On import and project load, the app permits a bounded set of static SVG vector elements and attributes. It removes scripts, event handlers, styles, embedded raster images, external references, XML entities, and unsupported content before rendering. Files larger than 500 KB or with excessive element count/depth are rejected. `currentColor` is preserved so one design can follow each location's `pinColor`.
+On import and project load, the app permits a bounded set of static SVG vector elements and attributes. It converts safe Illustrator class-based fill, gradient, and stroke declarations into portable presentation attributes, while removing scripts, event handlers, unsafe or unsupported styles, embedded raster images, external references, XML entities, and unsupported content. Files larger than 500 KB or with excessive element count/depth are rejected. `currentColor` is preserved so one design can follow the effective pin color.
 
 ## Locations
 
 Each location contains:
 
 - stable `id`
+- `layerId`, referencing one object in `layers`
+- `visible`, controlling the complete pin and label on the canvas and in every export
 - `city` and two-letter `state`
 - numeric `latitude` and `longitude`
 - `label` and `showLabel`
@@ -54,8 +74,20 @@ Each location contains:
 - `notes`
 - `customData` for CSV columns not used by the standard schema
 
-Supported pin types are `pin`, `circle`, `square`, `diamond`, and `star`. Supported label positions are `right`, `left`, `above`, and `below`.
+Supported pin types are `pin`, `circle`, `square`, `diamond`, and `star`. Supported label positions are `right`, `left`, `above`, and `below`. `visible` is independent of `showLabel`: hiding a location removes both its pin and label from rendered output while preserving all of its data; hiding only its label leaves the pin visible.
+
+## Autosave and recovery
+
+The JSON schema is the same for manual saves and autosaves. In the desktop app:
+
+- Opening or saving a project binds the editor to that `.usmap.json` path.
+- Every project-changing action is serialized after a short debounce and atomically replaces both the bound project file and the internal recovery JSON.
+- A new unsaved project writes only the internal recovery JSON until the user chooses **Save project**.
+- On launch, the latest valid recovery JSON and its bound path are restored automatically.
+- New project clears the previous external-file binding before its first autosave, preventing a new map from overwriting the prior project file.
+
+Atomic replacement writes a private temporary file beside the destination and renames it only after the complete JSON is present, reducing the chance of a partial file after interruption.
 
 ## Compatibility
 
-Version 0.3.1 writes schema version 2 and also reads schema version 1. A version 1 project migrates in memory with an empty `customPins` library and `null` custom-pin references; it is not rewritten until the user saves. The app rejects unrelated JSON, unsupported schema versions, missing core objects, invalid coordinates, duplicate custom-pin IDs, dangling custom-pin references, and malformed required fields instead of silently dropping data.
+Version 0.4.1 writes schema version 4 and also reads schema versions 1 through 3. Version 1 and 2 projects migrate with one visible `Layer 1 - Locations`; every existing location is assigned to it. Version 1 also receives an empty `customPins` library and `null` custom-pin references. Locations from schema versions 1 through 3 default to `visible: true` when that field is absent. The app rejects unrelated JSON, unsupported schema versions, missing core objects, invalid coordinates, duplicate layer or custom-pin IDs, dangling layer or custom-pin references, and malformed required fields instead of silently dropping data.

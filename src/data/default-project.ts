@@ -1,5 +1,7 @@
-import type { MapLocation, UsaMapProject } from "../types";
+import type { MapLayer, MapLocation, UsaMapProject } from "../types";
 import { PROJECT_SCHEMA, PROJECT_SCHEMA_VERSION } from "../types";
+
+export const DEFAULT_LAYER_ID = "layer-default";
 
 const sampleLocations: Array<Pick<MapLocation, "city" | "state" | "latitude" | "longitude" | "pinColor">> = [
   { city: "Seattle", state: "WA", latitude: 47.6062, longitude: -122.3321, pinColor: "#00662c" },
@@ -22,6 +24,8 @@ export function createLocation(
   const label = partial.label?.trim() || `${partial.city}, ${partial.state}`;
   return {
     id: partial.id ?? createId("location"),
+    layerId: partial.layerId ?? DEFAULT_LAYER_ID,
+    visible: partial.visible ?? true,
     city: partial.city,
     state: partial.state,
     latitude: partial.latitude,
@@ -39,8 +43,26 @@ export function createLocation(
   };
 }
 
+export function createMapLayer(
+  name: string,
+  partial: Partial<Omit<MapLayer, "name">> = {},
+): MapLayer {
+  return {
+    id: partial.id ?? createId("layer"),
+    name: name.trim() || "Untitled layer",
+    description: partial.description ?? "",
+    visible: partial.visible ?? true,
+    createdAt: partial.createdAt ?? new Date().toISOString(),
+  };
+}
+
 export function createDefaultProject(): UsaMapProject {
   const timestamp = new Date().toISOString();
+  const defaultLayer = createMapLayer("Layer 1 - Locations", {
+    id: DEFAULT_LAYER_ID,
+    description: "Default location layer",
+    createdAt: timestamp,
+  });
   return {
     schema: PROJECT_SCHEMA,
     schemaVersion: PROJECT_SCHEMA_VERSION,
@@ -66,8 +88,16 @@ export function createDefaultProject(): UsaMapProject {
       showLegend: true,
       stateColors: {},
     },
+    layers: [defaultLayer],
+    sharedPinStyle: {
+      enabled: false,
+      pinType: "pin",
+      customPinId: null,
+      pinColor: "#00662c",
+      pinSize: 16,
+    },
     customPins: [],
-    locations: sampleLocations.map((location) => createLocation(location)),
+    locations: sampleLocations.map((location) => createLocation({ ...location, layerId: defaultLayer.id })),
   };
 }
 

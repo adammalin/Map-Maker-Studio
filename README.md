@@ -6,24 +6,28 @@ USA Map Studio is a local-first Electron desktop editor for building accurate ma
 
 - Import CSV rows using `city` and `state`, exact `latitude` and `longitude`, or both.
 - Resolve city/state-only rows locally with no geocoding service or API key.
+- Create, rename, reorder, hide, show, and delete named location layers. Every location belongs to exactly one layer, and CSV imports target a specific layer without disturbing the others.
+- Hide or show any individual city without deleting it. Hidden locations remain in the list and project JSON but are omitted from the map and every export.
+- Turn on a shared pin style when every layer must use the same built-in or custom SVG symbol, color, and size; turn it off to keep per-location styles.
 - Edit pin type, pin color, size, label, label visibility, label placement, notes, and coordinates.
-- Import reusable custom SVG pin artwork. Sanitized vector markup is embedded in the project JSON so the design travels with the file; SVGs using `currentColor` follow the location's pin color.
+- Import reusable custom SVG pin artwork and apply it across the entire map. Sanitized vector markup is embedded in the project JSON so the design travels with the file; safe Illustrator gradient and stroke styles are retained, and SVGs using `currentColor` follow the location's pin color.
 - Choose colors from named ORNL Primary, Secondary, and Accent swatches in every color field, or keep using the native picker and exact hex values. The swatches are a draft aid and do not replace communications review.
-- Switch between distinct workspaces: Map editor maximizes the canvas, Locations opens the searchable location manager, Map style focuses the global/state appearance inspector, and Export shows output choices.
+- Switch between distinct workspaces: Map editor maximizes the canvas, Locations opens the searchable location manager, Layers controls organization and visibility, Map style focuses the global/state appearance inspector, and Export shows output choices.
 - Style the map canvas, default state fill, individual state colors, state lines, optional county lines, state abbreviations, label halo, and legend.
 - Pan and zoom the live map, select a state for a fill override, and drag pins to refine coordinates.
-- Save and reopen a versioned `.usmap.json` project containing the complete map configuration and every location.
-- Export a scalable SVG, a 2400 x 1440 PNG, or a one-slide 16:9 PowerPoint whose states, boundary layers, text, standard pins, and legend are separate editable objects. Imported custom SVG pins remain separate movable vector objects.
+- Save and reopen a versioned `.usmap.json` project containing the complete map configuration, ordered layers, layer/location visibility, shared style, and every location.
+- Autosave every project-changing action. After a project is opened or saved, the same `.usmap.json` file is updated atomically; until a user-selected path exists, the app maintains an internal JSON recovery file and restores it on launch.
+- Export a scalable SVG, a 2400 x 1440 PNG, or a one-slide 16:9 PowerPoint whose states, boundary layers, text, standard pins, and legend are separate editable objects. SVG uses named layer groups; visible PowerPoint location objects are prefixed with their layer name in the Selection Pane. Imported custom SVG pins remain separate movable vector objects.
 - Let ChatGPT desktop, Codex, or another local MCP client inspect the open project and stage visible map-change proposals for human review.
 
 The interface deliberately follows the clear hierarchy and square-edged desktop design language of OrgChart Studio while remaining a separate product.
 
-Current application version: **0.3.1**.
+Current application version: **0.4.1**.
 
 ## Documentation
 
 - [USA Map Studio User Guide (PDF)](docs/USA-Map-Studio-User-Guide.pdf) - installation commands, workspace modes, CSV import, custom SVG pins, ORNL color swatches, exports, and local MCP control.
-- [Project file format](docs/PROJECT-FORMAT.md) - schema version 2, embedded custom pins, validation, and version 1 migration.
+- [Project file format](docs/PROJECT-FORMAT.md) - schema version 4 layers, per-location visibility, shared pin styling, embedded custom pins, validation, and earlier-version migration.
 - [Local MCP integration](docs/MCP.md) - security model, setup, client configuration, and the review-first workflow.
 - [Editable PowerPoint example](examples/usa-map-studio-editable-export.pptx) - a generated sample for checking the PowerPoint Selection Pane and direct object editing.
 
@@ -65,15 +69,15 @@ By default, setup also registers the `usa_map_studio` STDIO MCP server in the sh
 
 Keep USA Map Studio open while using its tools. The integration uses a loopback-only HTTP bridge, an ephemeral port, and a random session token written to a private runtime file. CSV and project data remain on the computer unless an MCP read tool returns them to the AI conversation.
 
-The MCP server exposes read tools for app status, the complete current project, locations, and validation. Change tools cover exact locations, offline CSV import, custom SVG pin import, removals, location fields, map style, and complete project replacement. Every change tool creates one visible proposal in the app:
+The MCP server exposes read tools for app status, the complete current project, layers, locations, and validation. Change tools cover layer creation/rename/visibility/removal, layer assignments, shared pin styling, exact locations, target-layer CSV import, custom SVG pin import, removals, location fields, map style, and complete project replacement. Every change tool creates one visible proposal in the app:
 
 1. Ask the AI to read the current project or location list.
 2. Ask it to prepare a change.
 3. In USA Map Studio, open **Local AI control** or the proposal banner.
 4. Compare Before and After, then choose **Apply to working map** or **Reject proposal**.
-5. If applied, review the canvas and choose **Save project** when ready.
+5. If applied, review the canvas and watch the autosave status. Use **Save project** only when you need to choose or change the project file path.
 
-Applying a proposal changes only the working map and preserves Undo. It does not silently overwrite a `.usmap.json` file. If the map changes after a proposal is prepared, the app marks it stale and requires a fresh proposal.
+Applying a proposal changes the working map and preserves Undo. The normal autosave pipeline then updates the bound `.usmap.json` project file and the internal recovery JSON. If the project does not have a file path yet, only the recovery JSON is updated. If the map changes after a proposal is prepared, the app marks it stale and requires a fresh proposal.
 
 After setup, restart ChatGPT desktop or Codex and use `/mcp` to confirm `usa_map_studio`. Manual commands are also available:
 
@@ -102,6 +106,7 @@ Supported headers are flexible and case-insensitive. The canonical columns are:
 | `state` | Yes | Two-letter abbreviation or full state name. |
 | `latitude`, `longitude` | No | Exact coordinates. If both are blank, the app resolves the place offline. |
 | `label` | No | Visible label; defaults to `City, ST`. |
+| `visible` | No | Whether the complete location appears on the map and in exports; defaults to `true`. |
 | `show_label` | No | `true`/`false`, `yes`/`no`, or `1`/`0`. |
 | `pin_type` | No | `pin`, `circle`, `square`, `diamond`, or `star`. |
 | `pin_color` | No | Six-digit hex color such as `#00662c`. |
@@ -112,11 +117,13 @@ Supported headers are flexible and case-insensitive. The canonical columns are:
 
 Unknown CSV columns are retained under each location's `customData` object in project JSON. Start with [examples/sample-cities.csv](examples/sample-cities.csv) or download a template from the app.
 
+The CSV does not need a layer column. Choose the target layer in the import review dialog, then choose **Add locations** or **Replace target layer**. Replacing affects only that layer.
+
 ## Project files
 
-Project files use the `.usmap.json` suffix and include a schema identifier and version. The format is documented in [docs/PROJECT-FORMAT.md](docs/PROJECT-FORMAT.md). Opening a project validates its schema, colors, coordinates, and required fields before replacing the current canvas.
+Project files use the `.usmap.json` suffix and include a schema identifier and version. The format is documented in [docs/PROJECT-FORMAT.md](docs/PROJECT-FORMAT.md). Opening a project validates its schema, colors, coordinates, and required fields before replacing the current canvas. Once opened or saved, project-changing actions automatically update that file using an atomic temporary-file replacement. A separate internal recovery JSON is maintained and restored after an interrupted or ordinary relaunch.
 
-Imported pin designs live in the project-level `customPins` library as sanitized SVG strings, and locations select them by ID. There are no source-file path dependencies, so a saved project can be moved to another supported computer without losing its pin artwork. Schema version 1 files remain supported and migrate in memory to version 2 when opened.
+Imported pin designs live in the project-level `customPins` library as sanitized SVG strings, and locations or the shared pin style select them by ID. There are no source-file path dependencies, so a saved project can be moved to another supported computer without losing its pin artwork. Schema versions 1 through 3 remain supported and migrate in memory to schema version 4 when opened.
 
 ## Development and verification
 

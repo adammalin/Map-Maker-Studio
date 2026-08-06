@@ -1,4 +1,4 @@
-import { createLocation } from "../data/default-project";
+import { createLocation, createMapLayer, DEFAULT_LAYER_ID } from "../data/default-project";
 import { normalizeState } from "../data/state-metadata";
 import { sanitizeCustomPinSvg } from "./custom-pin";
 import {
@@ -6,10 +6,13 @@ import {
   PROJECT_SCHEMA_VERSION,
   type CustomPinDesign,
   type LabelPosition,
+  type MapLayer,
   type MapLocation,
   type PinType,
+  type SharedPinStyle,
   type UsaMapProject,
 } from "../types";
+import { sharedPinStyleFromLocation } from "./layers";
 
 const PIN_TYPES = new Set<PinType>(["pin", "circle", "square", "diamond", "star"]);
 const LABEL_POSITIONS = new Set<LabelPosition>(["right", "left", "above", "below"]);
@@ -57,7 +60,28 @@ function normalizeCustomPin(value: unknown, index: number): CustomPinDesign {
   };
 }
 
-function normalizeLocation(value: unknown, index: number, customPinIds: ReadonlySet<string>): MapLocation {
+function normalizeLayer(value: unknown, index: number): MapLayer {
+  if (!value || typeof value !== "object") throw new Error(`Layer ${index + 1} is not an object.`);
+  const input = value as Partial<MapLayer>;
+  const id = stringValue(input.id).trim();
+  const name = stringValue(input.name).trim();
+  if (!id) throw new Error(`Layer ${index + 1} is missing an ID.`);
+  if (!name) throw new Error(`Layer ${index + 1} is missing a name.`);
+  return createMapLayer(name.slice(0, 120), {
+    id,
+    description: stringValue(input.description).slice(0, 500),
+    visible: input.visible !== false,
+    createdAt: stringValue(input.createdAt, new Date().toISOString()),
+  });
+}
+
+function normalizeLocation(
+  value: unknown,
+  index: number,
+  customPinIds: ReadonlySet<string>,
+  layerIds: ReadonlySet<string>,
+  legacyLayerId: string | null,
+): MapLocation {
   if (!value || typeof value !== "object") throw new Error(`Location ${index + 1} is not an object.`);
   const input = value as Partial<MapLocation>;
   const city = stringValue(input.city).trim();
@@ -65,6 +89,7 @@ function normalizeLocation(value: unknown, index: number, customPinIds: Readonly
   const latitude = Number(input.latitude);
   const longitude = Number(input.longitude);
   const customPinId = stringValue(input.customPinId).trim() || null;
+  const layerId = legacyLayerId ?? stringValue(input.layerId).trim();
   if (!city) throw new Error(`Location ${index + 1} is missing a city.`);
   if (!state) throw new Error(`Location ${index + 1} is missing a state.`);
   if (!Number.isFinite(latitude) || latitude < 15 || latitude > 75) {
@@ -76,9 +101,14 @@ function normalizeLocation(value: unknown, index: number, customPinIds: Readonly
   if (customPinId && !customPinIds.has(customPinId)) {
     throw new Error(`Location ${index + 1} references a custom pin that is not embedded in this project.`);
   }
+  if (!layerId || !layerIds.has(layerId)) {
+    throw new Error(`Location ${index + 1} references a layer that is not embedded in this project.`);
+  }
   return createLocation({
     ...input,
     id: stringValue(input.id) || `location-imported-${index + 1}`,
+    layerId,
+    visible: input.visible !== false,
     city,
     state,
     latitude,
@@ -98,6 +128,27 @@ function normalizeLocation(value: unknown, index: number, customPinIds: Readonly
   });
 }
 
+function normalizeSharedPinStyle(
+  value: unknown,
+  customPinIds: ReadonlySet<string>,
+  fallbackLocation?: MapLocation,
+): SharedPinStyle {
+  const fallback = sharedPinStyleFromLocation(fallbackLocation);
+  if (!value || typeof value !== "object") return fallback;
+  const input = value as Partial<SharedPinStyle>;
+  const customPinId = stringValue(input.customPinId).trim() || null;
+  if (customPinId && !customPinIds.has(customPinId)) {
+    throw new Error("The shared pin style references a custom pin that is not embedded in this project.");
+  }
+  return {
+    enabled: input.enabled === true,
+    pinType: PIN_TYPES.has(input.pinType as PinType) ? input.pinType as PinType : fallback.pinType,
+    customPinId,
+    pinColor: colorValue(input.pinColor, fallback.pinColor),
+    pinSize: numberWithin(input.pinSize, fallback.pinSize, 6, 40),
+  };
+}
+
 export function parseProjectText(text: string): UsaMapProject {
   let parsed: unknown;
   try {
@@ -108,7 +159,8 @@ export function parseProjectText(text: string): UsaMapProject {
   if (!parsed || typeof parsed !== "object") throw new Error("The project file is empty.");
   const input = parsed as Partial<UsaMapProject>;
   if (input.schema !== PROJECT_SCHEMA) throw new Error("This is not a USA Map Studio project file.");
-  if (![1, PROJECT_SCHEMA_VERSION].includes(Number(input.schemaVersion))) {
+  const sourceSchemaVersion = Number(input.schemaVersion);
+  if (![1, 2, 3, PROJECT_SCHEMA_VERSION].includes(sourceSchemaVersion)) {
     throw new Error(`Project schema ${String(input.schemaVersion)} is not supported by this version.`);
   }
   if (!input.project || !input.map || !Array.isArray(input.locations)) {
@@ -121,6 +173,29 @@ export function parseProjectText(text: string): UsaMapProject {
     if (customPinIds.has(design.id)) throw new Error(`Custom pin ID ${design.id} appears more than once.`);
     customPinIds.add(design.id);
   }
+  const legacyLayer = sourceSchemaVersion < 3
+    ? createMapLayer("Layer 1 - Locations", {
+      id: DEFAULT_LAYER_ID,
+      description: "Migrated from an earlier USA Map Studio project",
+      createdAt: stringValue(input.project.createdAt, now),
+    })
+    : null;
+  const layers = legacyLayer
+    ? [legacyLayer]
+    : (Array.isArray(input.layers) ? input.layers : []).map(normalizeLayer);
+  if (layers.length === 0) throw new Error("The project must contain at least one layer.");
+  const layerIds = new Set<string>();
+  for (const layer of layers) {
+    if (layerIds.has(layer.id)) throw new Error(`Layer ID ${layer.id} appears more than once.`);
+    layerIds.add(layer.id);
+  }
+  const locations = input.locations.map((location, index) => normalizeLocation(
+    location,
+    index,
+    customPinIds,
+    layerIds,
+    legacyLayer?.id ?? null,
+  ));
   return {
     schema: PROJECT_SCHEMA,
     schemaVersion: PROJECT_SCHEMA_VERSION,
@@ -148,8 +223,14 @@ export function parseProjectText(text: string): UsaMapProject {
         Object.entries(input.map.stateColors ?? {}).filter(([, color]) => isHexColor(color)),
       ),
     },
+    layers,
+    sharedPinStyle: normalizeSharedPinStyle(
+      sourceSchemaVersion >= 3 ? input.sharedPinStyle : undefined,
+      customPinIds,
+      locations[0],
+    ),
     customPins,
-    locations: input.locations.map((location, index) => normalizeLocation(location, index, customPinIds)),
+    locations,
   };
 }
 
