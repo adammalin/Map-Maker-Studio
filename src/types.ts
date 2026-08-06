@@ -101,7 +101,32 @@ export interface UsaMapDesktopApi {
     bytes: ArrayBuffer;
   }): Promise<DesktopSaveResult>;
   openUserGuide(): Promise<{ opened: boolean; path: string }>;
+  getMcpStatus(): Promise<{
+    available: boolean;
+    address: string | null;
+    runtimeFile: string;
+  }>;
+  onMcpCommand(
+    handler: (request: DesktopMcpCommand) => Promise<unknown> | unknown,
+  ): () => void;
   requestQuit(): Promise<void>;
+}
+
+export interface DesktopMcpCommand {
+  id: string;
+  operation: string;
+  input?: Record<string, unknown>;
+}
+
+export interface AiMapProposal {
+  id: string;
+  operation: string;
+  summary: string;
+  details: string[];
+  createdAt: string;
+  baseUpdatedAt: string;
+  current: UsaMapProject;
+  proposed: UsaMapProject;
 }
 
 declare global {

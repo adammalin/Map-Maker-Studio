@@ -113,6 +113,12 @@ try {
   Write-Host "Running the hidden Electron interface check..."
   & $NpmExecutable run desktop:smoke
   if ($LASTEXITCODE -ne 0) { throw "The Electron smoke test failed with exit code $LASTEXITCODE." }
+  if ($env:USA_MAP_SETUP_MCP -ne "skip") {
+    Write-Host ""
+    Write-Host "Registering the optional local AI connection for ChatGPT desktop and Codex..."
+    & $NodeExecutable (Join-Path $ProjectRoot "scripts\configure-map-mcp.mjs") install --executable $NodeExecutable
+    if ($LASTEXITCODE -ne 0) { throw "The MCP configuration step failed with exit code $LASTEXITCODE." }
+  }
 } finally {
   Pop-Location
 }

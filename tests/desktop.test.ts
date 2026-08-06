@@ -11,6 +11,10 @@ test("Electron renderer keeps Node integration disabled", () => {
   assert.match(main, /nodeIntegration:\s*false/);
   assert.match(main, /sandbox:\s*true/);
   assert.match(main, /setWindowOpenHandler\(\(\) => \(\{ action: "deny" \}\)\)/);
+  assert.match(main, /listen\(0, "127\.0\.0\.1"/);
+  assert.match(main, /randomBytes\(32\)/);
+  assert.match(main, /mode: 0o600/);
+  assert.match(main, /mcpUnauthorizedBlocked/);
 });
 
 test("source setup scripts build and smoke-test without creating installers", () => {
@@ -20,5 +24,7 @@ test("source setup scripts build and smoke-test without creating installers", ()
   assert.match(mac, /npm run desktop:smoke/);
   assert.match(windows, /run build/);
   assert.match(windows, /run desktop:smoke/);
+  assert.match(mac, /configure-map-mcp\.mjs install/);
+  assert.match(windows, /configure-map-mcp\.mjs.*install/);
   assert.doesNotMatch(`${mac}\n${windows}`, /maker-squirrel|maker-dmg|create-installer/i);
 });

@@ -11,6 +11,7 @@ USA Map Studio is a local-first Electron desktop editor for building accurate ma
 - Pan and zoom the live map, select a state for a fill override, and drag pins to refine coordinates.
 - Save and reopen a versioned `.usmap.json` project containing the complete map configuration and every location.
 - Export a scalable SVG, a 2400 x 1440 PNG, or a one-slide 16:9 PowerPoint with the map retained as vector artwork.
+- Let ChatGPT desktop, Codex, or another local MCP client inspect the open project and stage visible map-change proposals for human review.
 
 The interface deliberately follows the clear hierarchy and square-edged desktop design language of OrgChart Studio while remaining a separate product.
 
@@ -43,6 +44,31 @@ powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ".\scripts\setup
 For later launches, double-click `Start-USA-Map-Studio.cmd` or run `scripts\start-windows.ps1` from PowerShell.
 
 The setup scripts install exact dependency versions, build the renderer, and run a hidden Electron smoke test. They do not create DMG, PKG, MSI, EXE, or Squirrel installers and do not disable operating-system security controls.
+
+By default, setup also registers the `usa_map_studio` STDIO MCP server in the shared ChatGPT desktop/Codex configuration at `~/.codex/config.toml` (or its Windows equivalent). Set `USA_MAP_SETUP_MCP=skip` before running setup to skip that optional step.
+
+## Local AI control with MCP
+
+Keep USA Map Studio open while using its tools. The integration uses a loopback-only HTTP bridge, an ephemeral port, and a random session token written to a private runtime file. CSV and project data remain on the computer unless an MCP read tool returns them to the AI conversation.
+
+The MCP server exposes read tools for app status, the complete current project, locations, and validation. Change tools cover exact locations, offline CSV import, removals, location fields, map style, and complete project replacement. Every change tool creates one visible proposal in the app:
+
+1. Ask the AI to read the current project or location list.
+2. Ask it to prepare a change.
+3. In USA Map Studio, open **Local AI control** or the proposal banner.
+4. Compare Before and After, then choose **Apply to working map** or **Reject proposal**.
+5. If applied, review the canvas and choose **Save project** when ready.
+
+Applying a proposal changes only the working map and preserves Undo. It does not silently overwrite a `.usmap.json` file. If the map changes after a proposal is prepared, the app marks it stale and requires a fresh proposal.
+
+After setup, restart ChatGPT desktop or Codex and use `/mcp` to confirm `usa_map_studio`. Manual commands are also available:
+
+```bash
+npm run mcp:install
+npm run mcp:remove
+```
+
+Other local MCP clients can launch `mcp/server.mjs` with Node.js from this project directory and set `USA_MAP_MCP_RUNTIME_FILE` to the runtime file shown by the app. ChatGPT web cannot reach this private desktop bridge directly; a future hosted plugin would be a separate deployment and security boundary.
 
 ## CSV format
 

@@ -435,6 +435,51 @@ button:disabled {
   color: var(--navy);
 }
 
+.ai-proposal-banner {
+  display: grid;
+  min-height: 48px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid #dca463;
+  border-left: 6px solid var(--forge);
+  background: #fff6e8;
+  padding: 6px 12px;
+}
+
+.ai-proposal-banner > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #7a4900;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.ai-proposal-banner p {
+  overflow: hidden;
+  margin: 0;
+  color: #65513b;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.ai-proposal-banner .button {
+  min-height: 32px;
+  border-color: #dca463;
+  background: #fffaf2;
+}
+
+.sidebar button.has-pending-proposal {
+  border-left-color: var(--forge);
+  background: #fff6e8;
+  color: #7a4900;
+}
+
 .editor-panel {
   display: grid;
   min-width: 0;
@@ -1092,6 +1137,171 @@ button:disabled {
   border-left: 5px solid var(--energy);
   background: var(--surface-green);
   color: var(--green);
+}
+
+.dialog.ai-proposal-dialog {
+  width: min(820px, 94vw);
+  border-top-color: var(--forge);
+}
+
+.ai-proposal-dialog .dialog__icon {
+  background: #fff0d8;
+  color: #8b5300;
+}
+
+.ai-safety-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border-left: 5px solid var(--green);
+  background: var(--surface-green);
+  color: var(--green);
+  padding: 13px 14px;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.ai-safety-note svg {
+  flex: 0 0 auto;
+}
+
+.ai-safety-note strong {
+  display: block;
+  color: var(--navy);
+}
+
+.ai-stale-warning {
+  margin-top: 12px;
+  border-left: 5px solid var(--spark);
+  background: #fff3ef;
+  color: #8f351b;
+  padding: 12px 14px;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.ai-compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin-top: 14px;
+  border: 1px solid var(--border-subtle);
+}
+
+.ai-compare > div {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+  padding: 14px;
+}
+
+.ai-compare > div:first-child {
+  border-right: 1px solid var(--border-subtle);
+  background: var(--surface-muted);
+}
+
+.ai-compare > div:last-child {
+  border-left: 5px solid var(--energy);
+  background: var(--surface-green);
+}
+
+.ai-compare small,
+.ai-change-summary span {
+  color: #6a7976;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.ai-compare strong {
+  overflow: hidden;
+  color: var(--navy);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.ai-compare span {
+  color: #61716e;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.ai-change-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  margin-top: 12px;
+  border: 1px solid var(--border-subtle);
+}
+
+.ai-change-summary > div {
+  display: grid;
+  gap: 2px;
+  border-right: 1px solid var(--border-subtle);
+  padding: 10px 13px;
+}
+
+.ai-change-summary > div:last-child {
+  border-right: 0;
+}
+
+.ai-change-summary strong {
+  color: var(--navy);
+  font-size: 18px;
+}
+
+.ai-change-list {
+  display: grid;
+  gap: 7px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ai-change-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: #566764;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.ai-change-list svg {
+  flex: 0 0 auto;
+  color: var(--green);
+}
+
+.ai-json-preview {
+  margin-top: 14px;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-muted);
+}
+
+.ai-json-preview summary {
+  color: var(--navy);
+  padding: 10px 12px;
+  font-size: 9px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.ai-json-preview pre {
+  max-height: 260px;
+  margin: 0;
+  border-top: 1px solid var(--border-subtle);
+  background: #fbfcfb;
+  overflow: auto;
+  padding: 12px;
+  color: #3f4f4c;
+  font: 8px/1.45 "SFMono-Regular", Consolas, monospace;
+  white-space: pre-wrap;
+}
+
+.ai-proposal-actions {
+  justify-content: space-between;
 }
 
 .export-note {

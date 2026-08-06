@@ -11,5 +11,20 @@ contextBridge.exposeInMainWorld("usaMapDesktop", {
   saveTextFile: (payload) => ipcRenderer.invoke("file:save-text", payload),
   saveBinaryFile: (payload) => ipcRenderer.invoke("file:save-binary", payload),
   openUserGuide: () => ipcRenderer.invoke("app:open-user-guide"),
+  getMcpStatus: () => ipcRenderer.invoke("mcp:get-status"),
+  onMcpCommand: (handler) => {
+    const listener = (_event, request) => {
+      Promise.resolve()
+        .then(() => handler(request))
+        .then((result) => ipcRenderer.send("mcp:response", { id: request.id, ok: true, result }))
+        .catch((error) => ipcRenderer.send("mcp:response", {
+          id: request.id,
+          ok: false,
+          error: error instanceof Error ? error.message : "The map editor rejected the MCP request.",
+        }));
+    };
+    ipcRenderer.on("mcp:command", listener);
+    return () => ipcRenderer.removeListener("mcp:command", listener);
+  },
   requestQuit: () => ipcRenderer.invoke("app:request-quit"),
 });

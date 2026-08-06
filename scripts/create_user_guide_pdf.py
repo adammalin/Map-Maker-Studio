@@ -75,7 +75,7 @@ def footer(pdf, page_number):
     pdf.setFillColor(WHITE)
     pdf.setFont("Helvetica", 7.2)
     pdf.drawString(40, 28, "USA Map Studio | Local desktop quick start | August 6, 2026")
-    pdf.drawRightString(572, 28, f"PAGE {page_number} OF 4")
+    pdf.drawRightString(572, 28, f"PAGE {page_number} OF 5")
 
 
 def code_box(pdf, title, lines, x, y, width, height, accent):
@@ -119,7 +119,7 @@ def build_pdf(output):
     pdf = canvas.Canvas(str(output), pagesize=letter, pageCompression=1)
     pdf.setTitle("USA Map Studio User Guide")
     pdf.setAuthor("USA Map Studio")
-    pdf.setSubject("macOS and Windows setup commands, CSV import, map editing, project files, and exports")
+    pdf.setSubject("macOS and Windows setup, CSV import, map editing, exports, and local MCP control")
 
     page_header(pdf, "No signed installer required | macOS and Windows", "Install from source.", "One verified script prepares, builds, checks, and starts the local desktop app.", 1)
     label(pdf, "Before you begin", 40, 614)
@@ -194,6 +194,31 @@ def build_pdf(output):
     label(pdf, "Local data boundary", 56, 171, ENERGY)
     wrapped(pdf, "Normal editing, place lookup, map rendering, and export run locally. USA Map Studio does not send CSV or project content to a service. Files are written only to locations you choose. The bundled map and place data come from U.S. Census Bureau 2025 Cartographic Boundary and Gazetteer files.", 56, 149, 500, font="Helvetica-Bold", size=8.4, leading=11.6, color=WHITE)
     footer(pdf, 4)
+    pdf.showPage()
+
+    page_header(pdf, "Optional local integration | Model Context Protocol", "Let AI prepare. You decide.", "ChatGPT desktop, Codex, and compatible local clients can stage map changes for review.", 5)
+    step_card(pdf, "1", "KEEP THE APP OPEN", "The setup script registers usa_map_studio. Restart the AI client, open USA Map Studio, then use /mcp to confirm the connection.", 40, 516, 166, 100)
+    step_card(pdf, "2", "ASK FOR A DRAFT", "The AI reads the named open project, uses its current timestamp, and stages one proposal. No map or saved file changes yet.", 223, 516, 166, 100, SOFT_NAVY, NAVY)
+    step_card(pdf, "3", "REVIEW IN THE APP", "Compare Before and After. Apply to the working map or Reject. Save the project separately only after checking the canvas.", 406, 516, 166, 100, PALE, BLUE)
+    label(pdf, "Manual connection commands", 40, 478)
+    code_box(pdf, "Register or repair", [
+        "npm run mcp:install",
+        "# Restart ChatGPT desktop or Codex, then use /mcp",
+    ], 40, 380, 254, 78, GREEN)
+    code_box(pdf, "Remove managed connection", [
+        "npm run mcp:remove",
+        "# Existing unrelated MCP settings remain in place",
+    ], 318, 380, 254, 78, NAVY)
+    label(pdf, "What the AI can do", 40, 346)
+    bullet(pdf, "Read", "Check app status, read the complete current project, list locations, and validate project JSON.", 40, 324, 250)
+    bullet(pdf, "Prepare", "Stage CSV imports, exact locations, location edits, removals, map styling, or a complete project replacement.", 40, 270, 250, BLUE)
+    bullet(pdf, "Cannot bypass review", "Write tools create one pending proposal. They cannot click Apply, write an export, or silently save project JSON.", 318, 324, 254, FORGE)
+    bullet(pdf, "Stale changes stop", "If the working map changes after the AI reads it, the proposal must be rebuilt from the current project.", 318, 270, 254, GREEN)
+    pdf.setFillColor(NAVY)
+    pdf.rect(40, 77, 532, 130, stroke=0, fill=1)
+    label(pdf, "Privacy boundary", 56, 182, ENERGY)
+    wrapped(pdf, "The bridge listens only on this computer and uses a new random token for each app launch. Project data stays local until a read tool returns it to the connected AI conversation. Use only an AI client approved for the map content. ChatGPT web cannot directly reach this private desktop bridge; that would require a separate hosted plugin.", 56, 160, 500, font="Helvetica-Bold", size=8.3, leading=11.4, color=WHITE)
+    footer(pdf, 5)
     pdf.save()
 
 

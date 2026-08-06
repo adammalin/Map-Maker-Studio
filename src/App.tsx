@@ -19,6 +19,7 @@ import {
   Plus,
   PresentationChart,
   Question,
+  Robot,
   Sparkle,
   SquaresFour,
   WarningDiamond,
@@ -28,10 +29,12 @@ import { createBlankProject, createDefaultProject, createLocation } from "./data
 import { parseLocationsCsv, CSV_TEMPLATE } from "./lib/csv";
 import { downloadBlob, prepareSvgMarkup, svgToPng, svgToPowerPoint } from "./lib/export";
 import { fileSafeName, parseProjectText, serializeProject } from "./lib/project";
-import type { ImportResult, MapLocation, MapSettings, UsaMapProject } from "./types";
+import { buildMcpProposal, validateProjectCandidate } from "./lib/mcp-proposals";
+import type { AiMapProposal, ImportResult, MapLocation, MapSettings, UsaMapProject } from "./types";
 import { MapCanvas } from "./components/MapCanvas";
 import { Inspector } from "./components/Inspector";
 import { ImportDialog } from "./components/ImportDialog";
+import { AiProposalDialog } from "./components/AiProposalDialog";
 
 interface HistoryState {
   past: UsaMapProject[];
@@ -56,6 +59,8 @@ export function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [notice, setNotice] = useState("Sample locations are loaded. Import a CSV or begin editing the map.");
   const [pendingImport, setPendingImport] = useState<PendingImport | null>(null);
+  const [pendingAiProposal, setPendingAiProposal] = useState<AiMapProposal | null>(null);
+  const [aiProposalOpen, setAiProposalOpen] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [exporting, setExporting] = useState<ExportKind | null>(null);
@@ -263,6 +268,27 @@ export function App() {
     showNotice("New blank project created.");
   }
 
+  function applyAiProposal() {
+    if (!pendingAiProposal) return;
+    if (project.project.updatedAt !== pendingAiProposal.baseUpdatedAt) {
+      showNotice("This AI proposal is stale. Reject it and ask the AI to read the current project again.");
+      return;
+    }
+    const applied = pendingAiProposal;
+    commitProject(() => structuredClone(applied.proposed));
+    setSelectedLocationId(applied.proposed.locations[0]?.id ?? null);
+    setSelectedStateFips(null);
+    setPendingAiProposal(null);
+    setAiProposalOpen(false);
+    showNotice("AI proposal applied to the working map. Review it, then save the project when ready.");
+  }
+
+  function rejectAiProposal() {
+    setPendingAiProposal(null);
+    setAiProposalOpen(false);
+    showNotice("AI proposal rejected. The working map was not changed.");
+  }
+
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       const command = event.metaKey || event.ctrlKey;
@@ -284,6 +310,80 @@ export function App() {
   useEffect(() => () => {
     if (noticeTimer.current) window.clearTimeout(noticeTimer.current);
   }, []);
+
+  useEffect(() => {
+    const desktop = window.usaMapDesktop;
+    if (!desktop?.onMcpCommand) return;
+    return desktop.onMcpCommand(async ({ operation, input = {} }) => {
+      if (operation === "get_app_status") {
+        return {
+          app: "USA Map Studio",
+          version: APP_VERSION,
+          project: {
+            id: project.project.id,
+            name: project.project.name,
+            updatedAt: project.project.updatedAt,
+            locationCount: project.locations.length,
+          },
+          dirty,
+          pendingProposal: pendingAiProposal
+            ? { id: pendingAiProposal.id, summary: pendingAiProposal.summary, createdAt: pendingAiProposal.createdAt }
+            : null,
+        };
+      }
+      if (operation === "get_current_project") {
+        return { project: structuredClone(project), dirty };
+      }
+      if (operation === "list_locations") {
+        const query = typeof input.query === "string" ? input.query.trim().toLowerCase() : "";
+        const matches = query
+          ? project.locations.filter((location) =>
+              [location.id, location.label, location.city, location.state, location.notes]
+                .some((value) => value.toLowerCase().includes(query)),
+            )
+          : project.locations;
+        return {
+          locations: structuredClone(matches.slice(0, 500)),
+          total: matches.length,
+          truncated: matches.length > 500,
+          projectUpdatedAt: project.project.updatedAt,
+        };
+      }
+      if (operation === "validate_project") {
+        const candidate = input.project === undefined ? project : validateProjectCandidate(input.project);
+        return {
+          valid: true,
+          project: {
+            id: candidate.project.id,
+            name: candidate.project.name,
+            locationCount: candidate.locations.length,
+            updatedAt: candidate.project.updatedAt,
+          },
+        };
+      }
+      if (pendingAiProposal) {
+        throw new Error("A map proposal is already waiting for review. Apply or reject it in USA Map Studio first.");
+      }
+      const result = buildMcpProposal(operation, input, project);
+      setPendingAiProposal(result.proposal);
+      setAiProposalOpen(true);
+      showNotice(`AI proposal ready: ${result.proposal.summary}. Nothing has been applied or saved.`);
+      return {
+        proposal: {
+          id: result.proposal.id,
+          operation: result.proposal.operation,
+          summary: result.proposal.summary,
+          details: result.proposal.details,
+          createdAt: result.proposal.createdAt,
+          baseUpdatedAt: result.proposal.baseUpdatedAt,
+          proposedLocationCount: result.proposal.proposed.locations.length,
+        },
+        importIssues: result.importIssues ?? [],
+        applied: false,
+        saved: false,
+      };
+    });
+  }, [dirty, pendingAiProposal, project, showNotice]);
 
   return (
     <div className="studio-shell" data-testid="studio-shell">
@@ -326,6 +426,7 @@ export function App() {
           <p className="sidebar__label">Resources</p>
           <button type="button" onClick={() => { downloadBlob("usa-map-studio-template.csv", new Blob([CSV_TEMPLATE], { type: "text/csv" })); showNotice("CSV template downloaded."); }}><FileArrowUp size={19} /><span>CSV template</span></button>
           <button type="button" onClick={() => void openGuide()}><Question size={19} /><span>User guide</span></button>
+          {window.usaMapDesktop ? <button type="button" className={pendingAiProposal ? "has-pending-proposal" : ""} onClick={() => pendingAiProposal ? setAiProposalOpen(true) : showNotice("Local AI control is ready. Connect through the installed USA Map Studio MCP server.")}><Robot size={19} /><span>Local AI control</span>{pendingAiProposal ? <span className="nav-count">1</span> : null}</button> : null}
         </div>
         <div className="sidebar__summary">
           <p>Active project</p>
@@ -337,6 +438,13 @@ export function App() {
       </aside>
 
       <main className="workspace">
+        {pendingAiProposal ? (
+          <section className="ai-proposal-banner" aria-live="polite" data-testid="ai-proposal-banner">
+            <span><Robot size={17} weight="bold" /> AI proposal waiting</span>
+            <p>{pendingAiProposal.summary} · Not applied or saved.</p>
+            <button type="button" className="button button--secondary" onClick={() => setAiProposalOpen(true)}>Review changes</button>
+          </section>
+        ) : null}
         {notice ? (
           <section className="prototype-notice" aria-live="polite">
             <span><Sparkle size={16} /> Ready</span><p>{notice}</p><button type="button" onClick={() => setNotice("")} aria-label="Dismiss notice"><X size={16} /></button>
@@ -455,6 +563,15 @@ export function App() {
             showNotice(`Replaced the list with ${pendingImport.result.locations.length} locations.`);
             setPendingImport(null);
           }}
+        />
+      ) : null}
+      {pendingAiProposal && aiProposalOpen ? (
+        <AiProposalDialog
+          proposal={pendingAiProposal}
+          stale={project.project.updatedAt !== pendingAiProposal.baseUpdatedAt}
+          onApply={applyAiProposal}
+          onReject={rejectAiProposal}
+          onReviewLater={() => setAiProposalOpen(false)}
         />
       ) : null}
     </div>

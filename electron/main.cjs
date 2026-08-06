@@ -1,12 +1,144 @@
 const { app, BrowserWindow, dialog, ipcMain, shell } = require("electron");
+const fsSync = require("node:fs");
 const fs = require("node:fs/promises");
+const http = require("node:http");
 const path = require("node:path");
+const { randomBytes, randomUUID, timingSafeEqual } = require("node:crypto");
 
 const projectRoot = path.resolve(__dirname, "..");
 const smokeTest = process.env.USA_MAP_STUDIO_SMOKE_TEST === "1";
 const capturePath = process.env.USA_MAP_STUDIO_CAPTURE_PATH || "";
+const MCP_RUNTIME_FILE_NAME = "mcp-runtime.json";
+const MCP_MAX_BODY_BYTES = 5_000_000;
+const mcpToken = randomBytes(32).toString("hex");
 let mainWindow = null;
 let quitting = false;
+let mcpServer = null;
+let mcpAddress = null;
+const pendingMcpCommands = new Map();
+
+function mcpRuntimePath() {
+  return path.join(app.getPath("userData"), MCP_RUNTIME_FILE_NAME);
+}
+
+function tokenMatches(value) {
+  if (typeof value !== "string") return false;
+  const supplied = Buffer.from(value);
+  const expected = Buffer.from(mcpToken);
+  return supplied.length === expected.length && timingSafeEqual(supplied, expected);
+}
+
+function jsonResponse(response, status, body) {
+  const payload = Buffer.from(JSON.stringify(body));
+  response.writeHead(status, {
+    "content-type": "application/json; charset=utf-8",
+    "content-length": payload.length,
+    "cache-control": "no-store",
+  });
+  response.end(payload);
+}
+
+async function readJsonBody(request) {
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of request) {
+    size += chunk.length;
+    if (size > MCP_MAX_BODY_BYTES) throw new Error("The MCP request exceeds the 5 MB limit.");
+    chunks.push(chunk);
+  }
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+  } catch {
+    throw new Error("The MCP request body is not valid JSON.");
+  }
+}
+
+function dispatchMcpCommand(operation, input) {
+  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isLoading()) {
+    return Promise.reject(new Error("USA Map Studio is still starting. Try the tool again in a moment."));
+  }
+  const id = randomUUID();
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      pendingMcpCommands.delete(id);
+      reject(new Error("USA Map Studio did not answer the MCP request in time."));
+    }, 12_000);
+    pendingMcpCommands.set(id, { resolve, reject, timer });
+    mainWindow.webContents.send("mcp:command", { id, operation, input });
+  });
+}
+
+async function handleMcpRequest(request, response) {
+  if (request.socket.remoteAddress !== "127.0.0.1" && request.socket.remoteAddress !== "::ffff:127.0.0.1") {
+    jsonResponse(response, 403, { error: "Only loopback MCP requests are accepted." });
+    return;
+  }
+  if (!tokenMatches(request.headers["x-usa-map-studio-token"])) {
+    jsonResponse(response, 403, { error: "USA Map Studio rejected the desktop session token." });
+    return;
+  }
+  const url = new URL(request.url || "/", "http://127.0.0.1");
+  if (request.method !== "POST" || url.pathname !== "/command") {
+    jsonResponse(response, 404, { error: "Unknown local MCP endpoint." });
+    return;
+  }
+  try {
+    const body = await readJsonBody(request);
+    if (typeof body.operation !== "string" || !body.operation.trim()) {
+      throw new Error("An MCP operation is required.");
+    }
+    const result = await dispatchMcpCommand(body.operation, body.input ?? {});
+    jsonResponse(response, 200, { result });
+  } catch (error) {
+    jsonResponse(response, 400, {
+      error: error instanceof Error ? error.message.slice(0, 700) : "The MCP request failed.",
+    });
+  }
+}
+
+async function startMcpBridge() {
+  mcpServer = http.createServer((request, response) => {
+    void handleMcpRequest(request, response);
+  });
+  mcpServer.on("clientError", (_error, socket) => socket.destroy());
+  await new Promise((resolve, reject) => {
+    mcpServer.once("error", reject);
+    mcpServer.listen(0, "127.0.0.1", resolve);
+  });
+  const address = mcpServer.address();
+  if (!address || typeof address === "string") throw new Error("The local MCP bridge did not receive a port.");
+  mcpAddress = `http://127.0.0.1:${address.port}/`;
+  const target = mcpRuntimePath();
+  const temporary = `${target}.tmp-${process.pid}-${Date.now()}`;
+  await fs.mkdir(path.dirname(target), { recursive: true, mode: 0o700 });
+  await fs.writeFile(temporary, `${JSON.stringify({
+    version: 1,
+    pid: process.pid,
+    baseUrl: mcpAddress,
+    token: mcpToken,
+    startedAt: new Date().toISOString(),
+  })}\n`, { encoding: "utf8", mode: 0o600 });
+  await fs.rename(temporary, target);
+  try { await fs.chmod(target, 0o600); } catch { /* Windows does not implement POSIX modes. */ }
+}
+
+function stopMcpBridge() {
+  for (const pending of pendingMcpCommands.values()) {
+    clearTimeout(pending.timer);
+    pending.reject(new Error("USA Map Studio is closing."));
+  }
+  pendingMcpCommands.clear();
+  if (mcpServer) mcpServer.close();
+  mcpServer = null;
+  mcpAddress = null;
+  const target = mcpRuntimePath();
+  try {
+    const descriptor = JSON.parse(fsSync.readFileSync(target, "utf8"));
+    if (descriptor?.pid === process.pid) fsSync.rmSync(target, { force: true });
+  } catch {
+    // A future app start safely replaces a stale or unreadable descriptor.
+  }
+}
 
 function filtersFor(kind) {
   if (kind === "csv") return [{ name: "CSV location lists", extensions: ["csv"] }];
@@ -18,6 +150,22 @@ function filtersFor(kind) {
 }
 
 function registerIpc() {
+  ipcMain.on("mcp:response", (event, payload) => {
+    if (!mainWindow || event.sender !== mainWindow.webContents) return;
+    const pending = pendingMcpCommands.get(payload?.id);
+    if (!pending) return;
+    pendingMcpCommands.delete(payload.id);
+    clearTimeout(pending.timer);
+    if (payload.ok) pending.resolve(payload.result);
+    else pending.reject(new Error(typeof payload.error === "string" ? payload.error : "The map editor rejected the MCP request."));
+  });
+
+  ipcMain.handle("mcp:get-status", () => ({
+    available: Boolean(mcpAddress),
+    address: mcpAddress,
+    runtimeFile: mcpRuntimePath(),
+  }));
+
   ipcMain.handle("file:open-text", async (_event, kind) => {
     const result = await dialog.showOpenDialog(mainWindow, {
       title: kind === "csv" ? "Import location CSV" : "Open USA Map Studio project",
@@ -96,10 +244,72 @@ async function runSmoke(window) {
       documentOverflowY: document.documentElement.scrollHeight > document.documentElement.clientHeight,
     };
   })()`);
+  const unauthorized = await fetch(new URL("command", mcpAddress), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ operation: "get_app_status", input: {} }),
+  });
+  const authorized = await fetch(new URL("command", mcpAddress), {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-usa-map-studio-token": mcpToken,
+    },
+    body: JSON.stringify({ operation: "get_app_status", input: {} }),
+  });
+  const authorizedBody = await authorized.json();
+  result.mcpBridge = authorized.ok && authorizedBody?.result?.app === "USA Map Studio";
+  result.mcpUnauthorizedBlocked = unauthorized.status === 403;
+  result.mcpLoopback = mcpAddress?.startsWith("http://127.0.0.1:") === true;
+  const staged = await fetch(new URL("command", mcpAddress), {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-usa-map-studio-token": mcpToken,
+    },
+    body: JSON.stringify({
+      operation: "stage_map_style_update",
+      input: {
+        patch: { showCountyLines: true },
+        expectedUpdatedAt: authorizedBody?.result?.project?.updatedAt,
+        summary: "Smoke-test county line proposal",
+      },
+    }),
+  });
+  const stagedBody = await staged.json();
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  const reviewState = await window.webContents.executeJavaScript(`(() => ({
+    banner: Boolean(document.querySelector('[data-testid="ai-proposal-banner"]')),
+    dialog: Boolean(document.querySelector('[data-testid="ai-proposal-dialog"]')),
+    countiesBeforeApply: document.querySelector('[aria-label="Map detail controls"] button')?.getAttribute('aria-pressed'),
+  }))()`);
+  result.mcpProposalStaged = staged.ok && stagedBody?.result?.applied === false &&
+    stagedBody?.result?.saved === false && reviewState.banner && reviewState.dialog &&
+    reviewState.countiesBeforeApply === "false";
+  if (capturePath) {
+    const image = await window.webContents.capturePage();
+    await fs.mkdir(path.dirname(capturePath), { recursive: true });
+    await fs.writeFile(capturePath, image.toPNG());
+  }
+  await window.webContents.executeJavaScript(`(() => {
+    const apply = [...document.querySelectorAll('.ai-proposal-actions button')]
+      .find((button) => button.textContent?.includes('Apply to working map'));
+    apply?.click();
+  })()`);
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  const appliedState = await window.webContents.executeJavaScript(`(() => ({
+    proposalGone: !document.querySelector('[data-testid="ai-proposal-banner"]'),
+    countiesAfterApply: document.querySelector('[aria-label="Map detail controls"] button')?.getAttribute('aria-pressed'),
+    dirty: document.querySelector('.save-status')?.textContent,
+  }))()`);
+  result.mcpProposalAppliedByUser = appliedState.proposalGone &&
+    appliedState.countiesAfterApply === "true" && appliedState.dirty === "Unsaved";
   const passed = result.shell && result.map && result.stage && result.list &&
     result.locationRows >= 8 && result.statePaths === 51 &&
     result.width > 400 && result.height > 240 &&
-    !result.documentOverflowX && !result.documentOverflowY;
+    !result.documentOverflowX && !result.documentOverflowY &&
+    result.mcpBridge && result.mcpUnauthorizedBlocked && result.mcpLoopback &&
+    result.mcpProposalStaged && result.mcpProposalAppliedByUser;
   console.log(`USA_MAP_STUDIO_SMOKE ${JSON.stringify({ passed, ...result })}`);
   if (!passed) process.exitCode = 1;
   app.quit();
@@ -157,6 +367,11 @@ async function createWindow() {
 
 app.whenReady().then(async () => {
   registerIpc();
+  try {
+    await startMcpBridge();
+  } catch (error) {
+    console.error("The optional local MCP bridge could not start.", error);
+  }
   await createWindow();
   app.on("activate", () => {
     if (mainWindow) mainWindow.show();
@@ -166,6 +381,7 @@ app.whenReady().then(async () => {
 
 app.on("before-quit", () => {
   quitting = true;
+  stopMcpBridge();
 });
 
 app.on("window-all-closed", () => {

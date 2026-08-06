@@ -17,20 +17,25 @@
     "preview": "vite preview --host 127.0.0.1",
     "desktop": "node scripts/start-electron.mjs",
     "desktop:smoke": "node scripts/start-electron.mjs --smoke",
-    "test": "node --import tsx --test tests/*.test.ts",
+    "mcp": "node mcp/server.mjs",
+    "mcp:install": "node scripts/configure-map-mcp.mjs install",
+    "mcp:remove": "node scripts/configure-map-mcp.mjs remove",
+    "test": "node --import tsx --test tests/*.test.ts tests/*.test.mjs",
     "test:all": "npm test && npm run build && npm run desktop:smoke",
     "package:mac": "npm run build && node scripts/package-electron.mjs mac",
     "package:windows": "npm run build && node scripts/package-electron.mjs windows",
     "guide": "python3 scripts/create_user_guide_pdf.py"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
     "@phosphor-icons/react": "^2.1.10",
     "d3-geo": "^3.1.1",
     "papaparse": "^5.5.3",
     "pptxgenjs": "4.0.1",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "topojson-client": "^3.1.0"
+    "topojson-client": "^3.1.0",
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@electron/packager": "^19.0.2",
