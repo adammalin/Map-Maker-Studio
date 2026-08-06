@@ -49,8 +49,16 @@ interface PendingImport {
 }
 
 type ExportKind = "svg" | "png" | "pptx";
+type WorkspaceMode = "map" | "locations" | "style" | "export";
 
-const APP_VERSION = "0.2.0";
+const WORKSPACE_MODE_COPY: Record<WorkspaceMode, { title: string; description: string }> = {
+  map: { title: "Map editor", description: "Select and refine pins directly on the canvas" },
+  locations: { title: "Location workspace", description: "Search, import, organize, and edit mapped places" },
+  style: { title: "Map style", description: "Control geography, labels, state fills, and the legend" },
+  export: { title: "Export preview", description: "Review the composition and choose an output format" },
+};
+
+const APP_VERSION = "0.2.1";
 
 export function App() {
   const [history, setHistory] = useState<HistoryState>({ past: [], present: createDefaultProject(), future: [] });
@@ -65,13 +73,14 @@ export function App() {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [exporting, setExporting] = useState<ExportKind | null>(null);
-  const [activeSidebar, setActiveSidebar] = useState<"map" | "locations" | "style" | "export">("map");
+  const [activeSidebar, setActiveSidebar] = useState<WorkspaceMode>("map");
   const svgRef = useRef<SVGSVGElement>(null);
   const csvInputRef = useRef<HTMLInputElement>(null);
   const projectInputRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const noticeTimer = useRef<number | null>(null);
   const project = history.present;
+  const workspaceCopy = WORKSPACE_MODE_COPY[activeSidebar];
 
   const selectedLocation = project.locations.find((location) => location.id === selectedLocationId) ?? null;
   const filteredLocations = useMemo(() => {
@@ -142,6 +151,19 @@ export function App() {
     setSelectedStateFips(null);
     setActiveSidebar("locations");
     showNotice("A new location was added. Resolve a city or enter exact coordinates in the inspector.");
+  }
+
+  function activateWorkspace(mode: WorkspaceMode) {
+    setActiveSidebar(mode);
+    if (mode === "locations") {
+      setSelectedStateFips(null);
+      if (!selectedLocationId && project.locations.length) setSelectedLocationId(project.locations[0].id);
+    } else if (mode === "style") {
+      setSelectedLocationId(null);
+    } else if (mode === "map") {
+      setSelectedStateFips(null);
+      if (!selectedLocationId && project.locations.length) setSelectedLocationId(project.locations[0].id);
+    }
   }
 
   function duplicateSelectedLocation() {
@@ -431,7 +453,14 @@ export function App() {
         <label className="global-search">
           <MagnifyingGlass size={18} />
           <span className="sr-only">Search locations</span>
-          <input ref={searchInputRef} type="search" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search cities, labels, states, or notes" />
+          <input
+            ref={searchInputRef}
+            type="search"
+            value={searchQuery}
+            onFocus={() => activateWorkspace("locations")}
+            onChange={(event) => { setSearchQuery(event.target.value); activateWorkspace("locations"); }}
+            placeholder="Search cities, labels, states, or notes"
+          />
           <kbd>/</kbd>
         </label>
         <div className="topbar__status">
@@ -446,10 +475,10 @@ export function App() {
       <aside className="sidebar" aria-label="Workspace navigation">
         <div className="sidebar__section">
           <p className="sidebar__label">Workspace</p>
-          <button type="button" className={activeSidebar === "map" ? "is-active" : ""} onClick={() => setActiveSidebar("map")}><SquaresFour size={19} /><span>Map editor</span></button>
-          <button type="button" className={activeSidebar === "locations" ? "is-active" : ""} onClick={() => setActiveSidebar("locations")}><ListBullets size={19} /><span>Locations</span><span className="nav-count">{project.locations.length}</span></button>
-          <button type="button" className={activeSidebar === "style" ? "is-active" : ""} onClick={() => { setActiveSidebar("style"); setSelectedLocationId(null); }}><PaintBrush size={19} /><span>Map style</span></button>
-          <button type="button" className={activeSidebar === "export" ? "is-active" : ""} onClick={() => setActiveSidebar("export")}><DownloadSimple size={19} /><span>Export</span></button>
+          <button type="button" data-workspace-mode="map" aria-current={activeSidebar === "map" ? "page" : undefined} className={activeSidebar === "map" ? "is-active" : ""} onClick={() => activateWorkspace("map")}><SquaresFour size={19} /><span>Map editor</span></button>
+          <button type="button" data-workspace-mode="locations" aria-current={activeSidebar === "locations" ? "page" : undefined} className={activeSidebar === "locations" ? "is-active" : ""} onClick={() => activateWorkspace("locations")}><ListBullets size={19} /><span>Locations</span><span className="nav-count">{project.locations.length}</span></button>
+          <button type="button" data-workspace-mode="style" aria-current={activeSidebar === "style" ? "page" : undefined} className={activeSidebar === "style" ? "is-active" : ""} onClick={() => activateWorkspace("style")}><PaintBrush size={19} /><span>Map style</span></button>
+          <button type="button" data-workspace-mode="export" aria-current={activeSidebar === "export" ? "page" : undefined} className={activeSidebar === "export" ? "is-active" : ""} onClick={() => activateWorkspace("export")}><DownloadSimple size={19} /><span>Export</span></button>
         </div>
         <div className="sidebar__section">
           <p className="sidebar__label">Project</p>
@@ -489,7 +518,7 @@ export function App() {
         <section className="editor-panel" aria-label="USA map editor">
           <div className="canvas-toolbar">
             <div className="canvas-toolbar__mode">
-              <span><strong>Map detail</strong><small>Changes update the live vector drawing</small></span>
+              <span data-testid="workspace-mode-heading"><strong>{workspaceCopy.title}</strong><small>{workspaceCopy.description}</small></span>
               <div role="group" aria-label="Map detail controls">
                 <button type="button" className={project.map.showCountyLines ? "is-active" : ""} aria-pressed={project.map.showCountyLines} onClick={() => updateMap({ showCountyLines: !project.map.showCountyLines })}>Counties</button>
                 <button type="button" className={project.map.showStateLabels ? "is-active" : ""} aria-pressed={project.map.showStateLabels} onClick={() => updateMap({ showStateLabels: !project.map.showStateLabels })}>State labels</button>
@@ -507,8 +536,8 @@ export function App() {
             </div>
           </div>
 
-          <div className="editor-body">
-            <aside className="location-panel" aria-label="Map locations">
+          <div className={`editor-body editor-body--${activeSidebar}`} data-workspace-view={activeSidebar}>
+            {activeSidebar === "locations" ? <aside className="location-panel" aria-label="Map locations">
               <div className="panel-heading"><div><small>Data</small><h2>Locations</h2></div><button type="button" className="icon-button icon-button--primary" onClick={addLocation} aria-label="Add location"><Plus size={18} weight="bold" /></button></div>
               <div className="location-panel__actions"><button type="button" className="button button--secondary" onClick={() => void openCsv()}><FileCsv size={16} /> Import CSV</button><button type="button" className="button button--secondary" onClick={addLocation}><MapPin size={16} /> Add pin</button></div>
               <div className="location-list" data-testid="location-list">
@@ -523,7 +552,7 @@ export function App() {
                 )}
               </div>
               <div className="location-panel__footer"><span>{filteredLocations.length} shown</span><span>{project.locations.length} total</span></div>
-            </aside>
+            </aside> : null}
 
             <div className="map-stage" data-testid="map-stage">
               <div className="map-stage__badge"><MapTrifold size={15} weight="bold" /> Vector preview</div>
@@ -534,8 +563,20 @@ export function App() {
                 selectedStateFips={selectedStateFips}
                 zoom={zoom}
                 pan={pan}
-                onSelectLocation={setSelectedLocationId}
-                onSelectState={setSelectedStateFips}
+                onSelectLocation={(id) => {
+                  setSelectedLocationId(id);
+                  if (id) {
+                    setSelectedStateFips(null);
+                    if (activeSidebar === "style" || activeSidebar === "export") setActiveSidebar("map");
+                  }
+                }}
+                onSelectState={(fips) => {
+                  setSelectedStateFips(fips);
+                  if (fips) {
+                    setSelectedLocationId(null);
+                    setActiveSidebar("style");
+                  }
+                }}
                 onMoveLocation={(id, latitude, longitude) => updateLocation(id, { latitude: Number(latitude.toFixed(6)), longitude: Number(longitude.toFixed(6)) })}
                 onPanChange={setPan}
                 onZoomChange={setZoom}
@@ -593,12 +634,14 @@ export function App() {
           onAdd={() => {
             commitProject((current) => ({ ...current, locations: [...current.locations, ...pendingImport.result.locations] }));
             setSelectedLocationId(pendingImport.result.locations[0]?.id ?? null);
+            setActiveSidebar("locations");
             showNotice(`Added ${pendingImport.result.locations.length} locations${pendingImport.result.issues.length ? `; ${pendingImport.result.issues.length} rows need correction` : ""}.`);
             setPendingImport(null);
           }}
           onReplace={() => {
             commitProject((current) => ({ ...current, locations: pendingImport.result.locations }));
             setSelectedLocationId(pendingImport.result.locations[0]?.id ?? null);
+            setActiveSidebar("locations");
             showNotice(`Replaced the list with ${pendingImport.result.locations.length} locations.`);
             setPendingImport(null);
           }}

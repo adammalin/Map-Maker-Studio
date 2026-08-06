@@ -4,7 +4,7 @@ import { z } from "zod";
 import { MapAppClient, MapAppUnavailableError } from "./map-app-client.mjs";
 
 const SERVER_NAME = "usa-map-studio-local";
-const SERVER_VERSION = "0.2.0";
+const SERVER_VERSION = "0.2.1";
 
 const customValue = z.union([z.string(), z.number(), z.boolean(), z.null()]);
 const locationInput = z.object({

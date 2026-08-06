@@ -251,8 +251,51 @@ async function runSmoke(window) {
         .map((element) => ({ tag: element.tagName, className: element.className, right: Math.round(element.getBoundingClientRect().right) })),
       documentOverflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth,
       documentOverflowY: document.documentElement.scrollHeight > document.documentElement.clientHeight,
+      initialMapMode: document.querySelector('[data-workspace-view]')?.getAttribute('data-workspace-view') === 'map' &&
+        document.querySelector('[data-testid="workspace-mode-heading"] strong')?.textContent === 'Map editor' &&
+        !document.querySelector('.location-panel'),
     };
   })()`);
+  await window.webContents.executeJavaScript(`document.querySelector('[data-workspace-mode="locations"]')?.click()`);
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  const locationsMode = await window.webContents.executeJavaScript(`(() => ({
+    view: document.querySelector('[data-workspace-view]')?.getAttribute('data-workspace-view'),
+    heading: document.querySelector('[data-testid="workspace-mode-heading"] strong')?.textContent,
+    panel: Boolean(document.querySelector('.location-panel')),
+    list: Boolean(document.querySelector('[data-testid="location-list"]')),
+    rows: document.querySelectorAll('.location-row').length,
+    overflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+  }))()`);
+  await window.webContents.executeJavaScript(`document.querySelector('[data-workspace-mode="style"]')?.click()`);
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  const styleMode = await window.webContents.executeJavaScript(`(() => ({
+    view: document.querySelector('[data-workspace-view]')?.getAttribute('data-workspace-view'),
+    heading: document.querySelector('[data-testid="workspace-mode-heading"] strong')?.textContent,
+    locationPanel: Boolean(document.querySelector('.location-panel')),
+    mapInspector: Boolean(document.querySelector('[data-testid="map-inspector"]')),
+    overflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+  }))()`);
+  await window.webContents.executeJavaScript(`document.querySelector('[data-workspace-mode="map"]')?.click()`);
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  const mapMode = await window.webContents.executeJavaScript(`(() => ({
+    view: document.querySelector('[data-workspace-view]')?.getAttribute('data-workspace-view'),
+    heading: document.querySelector('[data-testid="workspace-mode-heading"] strong')?.textContent,
+    locationPanel: Boolean(document.querySelector('.location-panel')),
+    locationInspector: Boolean(document.querySelector('[data-testid="location-inspector"]')),
+    overflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+  }))()`);
+  result.list = locationsMode.list;
+  result.locationRows = locationsMode.rows;
+  result.workspaceModesFunctional = result.initialMapMode &&
+    locationsMode.view === "locations" && locationsMode.heading === "Location workspace" && locationsMode.panel && !locationsMode.overflowX &&
+    styleMode.view === "style" && styleMode.heading === "Map style" && !styleMode.locationPanel && styleMode.mapInspector && !styleMode.overflowX &&
+    mapMode.view === "map" && mapMode.heading === "Map editor" && !mapMode.locationPanel && mapMode.locationInspector && !mapMode.overflowX;
+  await window.webContents.executeJavaScript(`document.querySelector('[data-workspace-mode="locations"]')?.click()`);
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  await window.webContents.executeJavaScript(`document.querySelector('.location-row')?.click()`);
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  await window.webContents.executeJavaScript(`document.querySelector('[data-workspace-mode="map"]')?.click()`);
+  await new Promise((resolve) => setTimeout(resolve, 80));
   const unauthorized = await fetch(new URL("command", mcpAddress), {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -405,6 +448,8 @@ async function runSmoke(window) {
     !/script|onload/i.test(embeddedDesign.svg);
   result.customPinExports = customAppliedState.exportMarkupIncludesCustomPin && customAppliedState.customPinRasterized;
   if (capturePath) {
+    await window.webContents.executeJavaScript(`document.querySelector('[data-workspace-mode="locations"]')?.click()`);
+    await new Promise((resolve) => setTimeout(resolve, 120));
     await window.webContents.executeJavaScript(`(() => {
       const palette = document.querySelector('.brand-swatches');
       if (palette) palette.open = true;
@@ -419,7 +464,7 @@ async function runSmoke(window) {
     result.width > 400 && result.height > 240 &&
     !result.documentOverflowX && !result.documentOverflowY &&
     result.mcpBridge && result.mcpUnauthorizedBlocked && result.mcpLoopback &&
-    result.mcpProposalStaged && result.mcpProposalAppliedByUser &&
+    result.workspaceModesFunctional && result.mcpProposalStaged && result.mcpProposalAppliedByUser &&
     result.customPinProposalStaged && result.customPinEmbedded && result.customPinExports &&
     result.ornlPaletteAvailable;
   console.log(`USA_MAP_STUDIO_SMOKE ${JSON.stringify({ passed, ...result })}`);

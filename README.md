@@ -9,6 +9,7 @@ USA Map Studio is a local-first Electron desktop editor for building accurate ma
 - Edit pin type, pin color, size, label, label visibility, label placement, notes, and coordinates.
 - Import reusable custom SVG pin artwork. Sanitized vector markup is embedded in the project JSON so the design travels with the file; SVGs using `currentColor` follow the location's pin color.
 - Choose colors from named ORNL Primary, Secondary, and Accent swatches in every color field, or keep using the native picker and exact hex values. The swatches are a draft aid and do not replace communications review.
+- Switch between distinct workspaces: Map editor maximizes the canvas, Locations opens the searchable location manager, Map style focuses the global/state appearance inspector, and Export shows output choices.
 - Style the map canvas, default state fill, individual state colors, state lines, optional county lines, state abbreviations, label halo, and legend.
 - Pan and zoom the live map, select a state for a fill override, and drag pins to refine coordinates.
 - Save and reopen a versioned `.usmap.json` project containing the complete map configuration and every location.
