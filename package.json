@@ -1,0 +1,49 @@
+{
+  "name": "usa-map-studio",
+  "productName": "USA Map Studio",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local-first desktop editor for accurate, data-driven maps of the United States.",
+  "author": "USA Map Studio",
+  "license": "UNLICENSED",
+  "type": "module",
+  "main": "electron/main.cjs",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "desktop": "node scripts/start-electron.mjs",
+    "desktop:smoke": "node scripts/start-electron.mjs --smoke",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "test:all": "npm test && npm run build && npm run desktop:smoke",
+    "package:mac": "npm run build && node scripts/package-electron.mjs mac",
+    "package:windows": "npm run build && node scripts/package-electron.mjs windows",
+    "guide": "python3 scripts/create_user_guide_pdf.py"
+  },
+  "dependencies": {
+    "@phosphor-icons/react": "^2.1.10",
+    "d3-geo": "^3.1.1",
+    "papaparse": "^5.5.3",
+    "pptxgenjs": "4.0.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "topojson-client": "^3.1.0"
+  },
+  "devDependencies": {
+    "@electron/packager": "^19.0.2",
+    "@types/d3-geo": "^3.1.0",
+    "@types/node": "22.19.19",
+    "@types/papaparse": "^5.3.16",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "@types/topojson-client": "^3.1.5",
+    "@vitejs/plugin-react": "6.0.2",
+    "electron": "43.2.0",
+    "tsx": "^4.23.1",
+    "typescript": "5.9.3",
+    "vite": "8.2.0"
+  }
+}

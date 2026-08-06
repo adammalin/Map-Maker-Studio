@@ -1,0 +1,6 @@
+city,state,latitude,longitude,label,show_label,pin_type,pin_color,pin_size,label_color,label_position,team
+Oak Ridge,TN,,,Oak Ridge,true,pin,#fe5000,18,#373a36,right,Research
+Seattle,WA,,,Seattle,true,circle,#00662c,15,#373a36,right,West
+Denver,CO,39.7392,-104.9903,Denver,true,diamond,#006ba6,16,#373a36,above,Central
+Atlanta,GA,,,Atlanta,true,star,#7dba00,17,#373a36,below,South
+New York,NY,,,New York,true,square,#4e008e,15,#373a36,left,East
