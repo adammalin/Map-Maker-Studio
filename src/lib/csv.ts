@@ -4,6 +4,7 @@ import { normalizeState } from "../data/state-metadata";
 import type { ImportResult, LabelPosition, MapLocation, PinType } from "../types";
 import { resolveCity } from "./geocoder";
 import { isHexColor } from "./project";
+import { createLocationLabel } from "./callouts";
 
 const aliases = {
   city: ["city", "place", "town", "location", "locationname", "name"],
@@ -11,6 +12,7 @@ const aliases = {
   latitude: ["latitude", "lat"],
   longitude: ["longitude", "lon", "lng", "long"],
   label: ["label", "displaylabel", "displayname", "maplabel"],
+  company: ["company", "companyname", "organization", "organisation", "employer", "manufacturer"],
   visible: ["visible", "showlocation", "locationvisible", "showpin", "pinvisible"],
   showLabel: ["showlabel", "labelvisible", "displaylabelonmap"],
   pinType: ["pintype", "markertype", "symbol", "marker"],
@@ -59,9 +61,23 @@ function parseLabelPosition(value: string): LabelPosition {
 function customDataFor(row: Record<string, unknown>): MapLocation["customData"] {
   return Object.fromEntries(
     Object.entries(row)
-      .filter(([key, value]) => !knownHeaders.has(normalizeHeader(key)) && value !== "" && value != null)
+      .filter(([key, value]) => {
+        const normalized = normalizeHeader(key);
+        return !knownHeaders.has(normalized)
+          && !/^(?:label|customlabel)\d+$/.test(normalized)
+          && value !== ""
+          && value != null;
+      })
       .map(([key, value]) => [key, typeof value === "number" || typeof value === "boolean" ? value : String(value)]),
   );
+}
+
+function additionalLabelsFor(row: Record<string, unknown>): string[] {
+  return Object.entries(row)
+    .filter(([key, value]) => /^(?:label|customlabel)\d+$/.test(normalizeHeader(key)) && value !== "" && value != null)
+    .sort(([first], [second]) => normalizeHeader(first).localeCompare(normalizeHeader(second), undefined, { numeric: true }))
+    .map(([, value]) => String(value).trim())
+    .filter(Boolean);
 }
 
 export function parseLocationsCsv(text: string, options: { layerId?: string } = {}): ImportResult {
@@ -106,10 +122,11 @@ export function parseLocationsCsv(text: string, options: { layerId?: string } = 
     }
 
     const label = valueFor(row, aliases.label) || `${city}, ${state}`;
+    const company = valueFor(row, aliases.company);
     const pinColorValue = valueFor(row, aliases.pinColor);
     const labelColorValue = valueFor(row, aliases.labelColor);
     const pinSizeValue = Number(valueFor(row, aliases.pinSize));
-    locations.push(createLocation({
+    const location = createLocation({
       layerId: options.layerId,
       city,
       state,
@@ -124,15 +141,20 @@ export function parseLocationsCsv(text: string, options: { layerId?: string } = 
       labelColor: isHexColor(labelColorValue) ? labelColorValue : "#373a36",
       labelPosition: parseLabelPosition(valueFor(row, aliases.labelPosition)),
       notes: valueFor(row, aliases.notes),
-      customData: customDataFor(row),
-    }));
+      customData: { ...customDataFor(row), ...(company ? { company } : {}) },
+    });
+    if (company) location.callout.labels.push(createLocationLabel("company", company));
+    for (const additionalLabel of additionalLabelsFor(row)) {
+      location.callout.labels.push(createLocationLabel("custom", additionalLabel));
+    }
+    locations.push(location);
   });
 
   return { locations, issues, totalRows: parsed.data.length };
 }
 
 export const CSV_TEMPLATE = [
-  "city,state,latitude,longitude,label,visible,show_label,pin_type,pin_color,pin_size,label_color,label_position,notes",
-  "Oak Ridge,TN,,,Oak Ridge,true,true,pin,#00662c,18,#373a36,right,Coordinates resolved offline",
-  "Seattle,WA,47.6062,-122.3321,Seattle,true,true,circle,#006ba6,15,#373a36,above,Coordinates supplied",
+  "city,state,company,latitude,longitude,label,label_2,visible,show_label,pin_type,pin_color,pin_size,label_color,label_position,notes",
+  "Oak Ridge,TN,Example Manufacturer,,,Oak Ridge,DOE supplier,true,true,pin,#00662c,18,#373a36,right,Coordinates resolved offline",
+  "Seattle,WA,Example Fabrication Co.,47.6062,-122.3321,Seattle,,true,true,circle,#006ba6,15,#373a36,above,Coordinates supplied",
 ].join("\n");

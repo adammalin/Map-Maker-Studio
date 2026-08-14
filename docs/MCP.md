@@ -14,6 +14,7 @@ The MCP server lets a local AI client inspect the project currently open in USA 
 - Removing locations and replacing a project are flagged as destructive to MCP clients, even though they still stop at human review.
 - Removing a layer is also flagged as destructive because its assigned locations are included in the proposal removal.
 - `stage_custom_pin_import` sanitizes and embeds the submitted SVG before the proposal is shown. It can optionally assign the new design to one existing location or all locations, but still cannot apply or save the result. Safe Illustrator class-based gradient and stroke styles are converted to portable SVG presentation attributes.
+- Location read results include the complete schema-version-5 callout: ordered City, Company, and custom rows; independent typography; stored offsets; lock state; and leader-line settings. `stage_location_update` can stage a complete replacement `callout` object after reading the current location.
 
 When a read tool returns project or CSV-derived content, that returned content becomes part of the AI conversation. Do not use an AI client with material that is not approved for that client.
 
@@ -61,7 +62,7 @@ The runtime descriptor exists only while the desktop app is open. Never copy its
 5. Tell the user the proposal is waiting in USA Map Studio and has not been applied or saved.
 6. Wait for the user to apply or reject it before preparing another proposal.
 
-For city/state lists, prefer `stage_locations_from_csv`; it uses the same bundled 2025 Census place index as the app, targets a `layerId`, and returns unresolved rows explicitly. `mode: "replace_layer"` replaces only the chosen layer. Use `stage_locations_add` only when exact coordinates are known. Use `stage_custom_pin_import` for SVG artwork: provide a name, the complete SVG string, and optionally either `assignLocationId` or `assignToAll: true`. Assigning to all also enables the shared custom-pin style.
+For city/state lists, prefer `stage_locations_from_csv`; it uses the same bundled 2025 Census place index as the app, targets a `layerId`, and returns unresolved rows explicitly. A `company` column creates a Company callout row, while `label_2`, `label_3`, or `custom_label_1` columns create ordered Custom rows. The app automatically arranges unlocked imported callouts before showing the proposal. `mode: "replace_layer"` replaces only the chosen layer. Use `stage_locations_add` only when exact coordinates are known. Use `stage_custom_pin_import` for SVG artwork: provide a name, the complete SVG string, and optionally either `assignLocationId` or `assignToAll: true`. Assigning to all also enables the shared custom-pin style.
 
 ## Layer-aware tools
 
@@ -77,4 +78,4 @@ For city/state lists, prefer `stage_locations_from_csv`; it uses the same bundle
 
 All tools use stable layer IDs, not names, for mutation. This avoids mixing similarly named contract groups and preserves a clear audit trail in the proposal review.
 
-`stage_location_update` accepts `visible: false` to hide one city without deleting it and `visible: true` to show it again. This differs from `showLabel`, which changes only the text label. Read tools return both fields so an AI client can preserve the distinction.
+`stage_location_update` accepts `visible: false` to hide one city without deleting it and `visible: true` to show it again. To change rendered labels, prefer the complete `callout` field returned by `get_current_project` or `list_locations`. Its `visible` field hides only the callout, each label row has its own `visible` field, and the callout can carry manual offsets plus straight or elbow leader lines. Legacy `showLabel`, `label`, `labelColor`, and `labelPosition` patches remain supported and are translated into the version-5 callout model before review.

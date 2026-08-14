@@ -5,6 +5,7 @@ import type { MapLocation, UsaMapProject } from "../types";
 import type { EffectivePinStyle } from "./layers";
 import { effectivePinStyle, materializeEffectivePinStyles, visibleLocations } from "./layers";
 import { countyBoundaries, mapPath, projection, stateBoundaries, states } from "./map-geometry";
+import { calloutBox, calloutConnector, measureCallout } from "./callouts";
 
 const CANVAS_WIDTH = 1200;
 const CANVAS_HEIGHT = 720;
@@ -34,13 +35,6 @@ interface ParsedSubpath {
   points: CanvasPoint[];
   closed: boolean;
 }
-
-const labelOffsets: Record<MapLocation["labelPosition"], { x: number; y: number; anchor: "start" | "middle" | "end" }> = {
-  right: { x: 14, y: 4, anchor: "start" },
-  left: { x: -14, y: 4, anchor: "end" },
-  above: { x: 0, y: -16, anchor: "middle" },
-  below: { x: 0, y: 24, anchor: "middle" },
-};
 
 export function prepareSvgMarkup(svg: SVGSVGElement): string {
   const clone = svg.cloneNode(true) as SVGSVGElement;
@@ -262,6 +256,32 @@ function customPinSlideExtent(viewBox: string, maxExtent: number): { width: numb
   return { width: sourceWidth * scale, height: sourceHeight * scale };
 }
 
+function addLeaderSegment(
+  slide: PptxGenJS.Slide,
+  start: CanvasPoint,
+  end: CanvasPoint,
+  viewport: ExportViewport,
+  color: string,
+  width: number,
+  objectName: string,
+): void {
+  const first = mapPointToSlide(start, viewport);
+  const second = mapPointToSlide(end, viewport);
+  const x = Math.min(first[0], second[0]);
+  const y = Math.min(first[1], second[1]);
+  const w = Math.max(0.001, Math.abs(second[0] - first[0]));
+  const h = Math.max(0.001, Math.abs(second[1] - first[1]));
+  slide.addShape(SHAPE.line, {
+    x,
+    y,
+    w,
+    h,
+    flipV: (second[0] - first[0]) * (second[1] - first[1]) < 0,
+    line: { color: hex(color), width: Math.max(0.25, width * 0.75) },
+    objectName,
+  });
+}
+
 export async function svgToPng(svgMarkup: string, scale = 2): Promise<ArrayBuffer> {
   const image = new Image();
   image.decoding = "async";
@@ -412,26 +432,46 @@ export async function projectToPowerPoint(
       } else {
         addMapPin(slide, location, style, center, pinSize, objectPrefix);
       }
-      if (project.map.showLocationLabels && location.showLabel) {
-        const offset = labelOffsets[location.labelPosition];
-        const offsetX = offset.x + (offset.anchor === "start" ? style.pinSize * 0.25 : offset.anchor === "end" ? -style.pinSize * 0.25 : 0);
-        const [anchorX, anchorY] = mapPointToSlide([point[0] + offsetX, point[1] + offset.y], viewport);
-        const width = Math.max(0.72, Math.min(2.8, location.label.length * 0.075 * viewport.zoom));
-        const x = offset.anchor === "start" ? anchorX : offset.anchor === "end" ? anchorX - width : anchorX - width / 2;
-        slide.addText(location.label, {
-          x,
-          y: anchorY - 0.1,
-          w: width,
-          h: 0.2,
-          margin: 0,
-          align: offset.anchor === "middle" ? "center" : offset.anchor === "start" ? "left" : "right",
-          valign: "middle",
-          fontFace: "Aptos",
-          fontSize: Math.max(7, 8.6 * viewport.zoom),
-          bold: true,
-          color: hex(location.labelColor),
-          objectName: `${objectPrefix}Location label - ${location.label}`,
-        });
+      if (project.map.showLocationLabels && location.callout.visible) {
+        const metrics = measureCallout(location.callout);
+        const connector = calloutConnector(point, location.callout, metrics, style.pinSize * 0.55);
+        if (connector.visible) {
+          connector.points.slice(0, -1).forEach((start, segmentIndex) => {
+            addLeaderSegment(
+              slide,
+              start,
+              connector.points[segmentIndex + 1],
+              viewport,
+              location.callout.leaderColor,
+              location.callout.leaderWidth,
+              `${objectPrefix}Leader line ${segmentIndex + 1} - ${location.label}`,
+            );
+          });
+        }
+        const box = calloutBox(point, location.callout, metrics);
+        for (const row of metrics.rows) {
+          const rowLeft = location.callout.anchor === "start"
+            ? box.left
+            : location.callout.anchor === "end"
+              ? box.right - row.width
+              : point[0] + location.callout.offsetX - row.width / 2;
+          const [rowX, rowY] = mapPointToSlide([rowLeft, box.top + row.y], viewport);
+          slide.addText(row.label.text, {
+            x: rowX,
+            y: rowY,
+            w: Math.max(0.08, row.width * CANVAS_SCALE * viewport.zoom + 0.02),
+            h: Math.max(0.08, row.height * CANVAS_SCALE * viewport.zoom),
+            margin: 0,
+            align: location.callout.anchor === "middle" ? "center" : location.callout.anchor === "start" ? "left" : "right",
+            valign: "top",
+            fontFace: row.label.fontFamily,
+            fontSize: Math.max(4.5, row.label.fontSize * 0.75 * viewport.zoom),
+            bold: row.label.fontWeight >= 600,
+            color: hex(row.label.color),
+            breakLine: false,
+            objectName: `${objectPrefix}${row.label.role[0].toUpperCase()}${row.label.role.slice(1)} label - ${row.label.text}`,
+          });
+        }
       }
     }
   }

@@ -35,6 +35,7 @@ import { downloadBlob, prepareSvgMarkup, projectToPowerPoint, svgToPng } from ".
 import { fileSafeName, parseProjectText, serializeProject } from "./lib/project";
 import { buildMcpProposal, validateProjectCandidate } from "./lib/mcp-proposals";
 import { createCustomPinDesign } from "./lib/custom-pin";
+import { arrangeProjectCallouts, findCalloutOverlaps } from "./lib/callouts";
 import {
   applySharedPinStylePatch,
   effectivePinStyle,
@@ -42,7 +43,7 @@ import {
   materializeEffectivePinStyles,
   setPinEditingScope as applyPinEditingScope,
 } from "./lib/layers";
-import type { AiMapProposal, ImportResult, MapLayer, MapLocation, MapSettings, SharedPinStyle, UsaMapProject } from "./types";
+import type { AiMapProposal, ImportResult, LocationLabel, MapLayer, MapLocation, MapSettings, SharedPinStyle, UsaMapProject } from "./types";
 import { MapCanvas } from "./components/MapCanvas";
 import { MapMiniMap } from "./components/MapMiniMap";
 import { KeyboardShortcutsDialog } from "./components/KeyboardShortcutsDialog";
@@ -74,7 +75,7 @@ const WORKSPACE_MODE_COPY: Record<WorkspaceMode, { title: string; description: s
   export: { title: "Export preview", description: "Review the composition and choose an output format" },
 };
 
-const APP_VERSION = "0.5.1";
+const APP_VERSION = "0.6.0";
 
 export function App() {
   const [history, setHistory] = useState<HistoryState>({ past: [], present: createDefaultProject(), future: [] });
@@ -104,6 +105,8 @@ export function App() {
   const autosaveSequence = useRef(0);
   const project = history.present;
   const workspaceCopy = WORKSPACE_MODE_COPY[activeSidebar];
+  const calloutOverlaps = useMemo(() => findCalloutOverlaps(project), [project]);
+  const overlapLocationIds = useMemo(() => new Set(calloutOverlaps.flatMap((overlap) => [overlap.firstLocationId, overlap.secondLocationId])), [calloutOverlaps]);
 
   const selectedLocation = project.locations.find((location) => location.id === selectedLocationId) ?? null;
   const selectedLayer = project.layers.find((layer) => layer.id === selectedLayerId) ?? project.layers[0];
@@ -111,7 +114,7 @@ export function App() {
     const query = searchQuery.trim().toLowerCase();
     if (!query) return project.locations;
     return project.locations.filter((location) =>
-      [location.label, location.city, location.state, location.notes, layerName(project, location.layerId)]
+      [location.label, location.city, location.state, location.notes, layerName(project, location.layerId), ...location.callout.labels.map((label) => label.text)]
         .some((value) => value.toLowerCase().includes(query)),
     );
   }, [project, searchQuery]);
@@ -170,6 +173,54 @@ export function App() {
       ...current,
       locations: current.locations.map((location) => location.id === id ? { ...location, ...patch } : location),
     }));
+  }
+
+  function moveCallout(id: string, offsetX: number, offsetY: number) {
+    commitProject((current) => ({
+      ...current,
+      locations: current.locations.map((location) => location.id === id
+        ? {
+          ...location,
+          callout: {
+            ...location.callout,
+            offsetX: Number(offsetX.toFixed(2)),
+            offsetY: Number(offsetY.toFixed(2)),
+            placementMode: "manual",
+            locked: true,
+          },
+        }
+        : location),
+    }));
+  }
+
+  function arrangeCallouts() {
+    const arranged = arrangeProjectCallouts(project);
+    commitProject(() => arranged.project);
+    showNotice(arranged.overlaps.length
+      ? `Labels were arranged. ${arranged.overlaps.length} dense-area overlap${arranged.overlaps.length === 1 ? " remains" : "s remain"}; drag those callouts to finish.`
+      : "Labels were arranged with no detected callout overlaps. Locked callouts were preserved.");
+  }
+
+  function applyLabelStyleToRole(source: LocationLabel) {
+    commitProject((current) => ({
+      ...current,
+      locations: current.locations.map((location) => ({
+        ...location,
+        callout: {
+          ...location.callout,
+          labels: location.callout.labels.map((label) => label.role === source.role
+            ? {
+              ...label,
+              fontFamily: source.fontFamily,
+              fontSize: source.fontSize,
+              fontWeight: source.fontWeight,
+              color: source.color,
+            }
+            : label),
+        },
+      })),
+    }));
+    showNotice(`The selected typography was applied to every ${source.role} label.`);
   }
 
   function updateLayer(id: string, patch: Partial<MapLayer>) {
@@ -234,7 +285,7 @@ export function App() {
 
   function addLocation() {
     const location = createLocation({ layerId: selectedLayer.id, city: "Oak Ridge", state: "TN", latitude: 36.0104, longitude: -84.2696 });
-    commitProject((current) => ({ ...current, locations: [...current.locations, location] }));
+    commitProject((current) => arrangeProjectCallouts({ ...current, locations: [...current.locations, location] }).project);
     setSelectedLocationId(location.id);
     setSelectedStateFips(null);
     setActiveSidebar("locations");
@@ -266,8 +317,17 @@ export function App() {
       label: `${selectedLocation.label} copy`,
       latitude: selectedLocation.latitude + 0.18,
       longitude: selectedLocation.longitude + 0.18,
+      callout: {
+        ...selectedLocation.callout,
+        labels: selectedLocation.callout.labels.map((label) => ({
+          ...label,
+          id: `label-${crypto.randomUUID()}`,
+        })),
+        locked: false,
+        placementMode: "auto",
+      },
     });
-    commitProject((current) => ({ ...current, locations: [...current.locations, copy] }));
+    commitProject((current) => arrangeProjectCallouts({ ...current, locations: [...current.locations, copy] }).project);
     setSelectedLocationId(copy.id);
     showNotice("Location duplicated.");
   }
@@ -643,7 +703,7 @@ export function App() {
           : project.locations;
         const matches = query
           ? layerMatches.filter((location) =>
-              [location.id, location.label, location.city, location.state, location.notes]
+              [location.id, location.label, location.city, location.state, location.notes, ...location.callout.labels.map((label) => label.text)]
                 .some((value) => value.toLowerCase().includes(query)),
             )
           : layerMatches;
@@ -831,7 +891,7 @@ export function App() {
                     <button type="button" className="location-row__select" onClick={() => { setSelectedLocationId(location.id); setSelectedStateFips(null); }}>
                       <span className="location-row__marker" style={{ background: pinStyle.pinColor }}>{index + 1}</span>
                       <span><strong>{location.label}</strong><small>{location.city}, {location.state} · {layer?.name ?? "Unknown layer"} · {pinStyle.customPinId ? project.customPins.find((design) => design.id === pinStyle.customPinId)?.name ?? "custom SVG" : pinStyle.pinType}</small></span>
-                      {!location.visible || !location.showLabel || layer?.visible === false ? <span className="location-row__hidden">{!location.visible ? "Location hidden" : layer?.visible === false ? "Layer hidden" : "Label hidden"}</span> : null}
+                      {!location.visible || !location.callout.visible || layer?.visible === false ? <span className="location-row__hidden">{!location.visible ? "Location hidden" : layer?.visible === false ? "Layer hidden" : "Labels hidden"}</span> : null}
                     </button>
                     <button type="button" className="location-row__visibility" onClick={() => updateLocation(location.id, { visible: !location.visible })} aria-label={`${location.visible ? "Hide" : "Show"} ${location.label}`} title={`${location.visible ? "Hide" : "Show"} ${location.label}`} aria-pressed={location.visible}>
                       {location.visible ? <Eye size={15} weight="bold" /> : <EyeSlash size={15} />}
@@ -858,6 +918,7 @@ export function App() {
                 zoom={zoom}
                 pan={pan}
                 spacePressed={spacePressed}
+                overlapLocationIds={overlapLocationIds}
                 onSelectLocation={(id) => {
                   setSelectedLocationId(id);
                   if (id) {
@@ -873,11 +934,13 @@ export function App() {
                   }
                 }}
                 onMoveLocation={(id, latitude, longitude) => updateLocation(id, { latitude: Number(latitude.toFixed(6)), longitude: Number(longitude.toFixed(6)) })}
+                onMoveCallout={moveCallout}
                 onPanChange={setPan}
                 onZoomChange={setZoom}
               />
               <MapMiniMap project={project} zoom={zoom} pan={pan} onPanChange={setPan} />
-              <div className="map-stage__footer"><span>1200 × 720 export canvas</span><span>Albers USA projection</span><span>Space + drag to pan · drag pins to refine</span></div>
+              {calloutOverlaps.length ? <div className="map-stage__overlap-warning"><WarningDiamond size={15} weight="fill" /> {calloutOverlaps.length} label layout issue{calloutOverlaps.length === 1 ? "" : "s"}</div> : null}
+              <div className="map-stage__footer"><span>1200 × 720 export canvas</span><span>Albers USA projection</span><span>Space + drag to pan · drag pins or callouts to refine</span></div>
             </div>
 
             {activeSidebar === "export" ? (
@@ -912,9 +975,12 @@ export function App() {
                 customPins={project.customPins}
                 layers={project.layers}
                 sharedPinStyle={project.sharedPinStyle}
+                overlapCount={calloutOverlaps.length}
                 onUpdateLocation={(patch) => selectedLocation && updateLocation(selectedLocation.id, patch)}
                 onUpdateSharedPinStyle={updateSharedPinStyle}
                 onSetPinEditingScope={setPinEditingScope}
+                onArrangeCallouts={arrangeCallouts}
+                onApplyLabelStyleToRole={applyLabelStyleToRole}
                 onUpdateMap={updateMap}
                 onDuplicateLocation={duplicateSelectedLocation}
                 onRemoveLocation={removeSelectedLocation}
@@ -949,7 +1015,7 @@ export function App() {
           onClose={() => setPendingImport(null)}
           onAdd={() => {
             const locations = pendingImport.result.locations.map((location) => ({ ...location, layerId: selectedLayer.id }));
-            commitProject((current) => ({ ...current, locations: [...current.locations, ...locations] }));
+            commitProject((current) => arrangeProjectCallouts({ ...current, locations: [...current.locations, ...locations] }).project);
             setSelectedLocationId(pendingImport.result.locations[0]?.id ?? null);
             setActiveSidebar("locations");
             showNotice(`Added ${pendingImport.result.locations.length} locations to ${selectedLayer.name}${pendingImport.result.issues.length ? `; ${pendingImport.result.issues.length} rows need correction` : ""}.`);
@@ -957,7 +1023,7 @@ export function App() {
           }}
           onReplaceLayer={() => {
             const locations = pendingImport.result.locations.map((location) => ({ ...location, layerId: selectedLayer.id }));
-            commitProject((current) => ({ ...current, locations: [...current.locations.filter((location) => location.layerId !== selectedLayer.id), ...locations] }));
+            commitProject((current) => arrangeProjectCallouts({ ...current, locations: [...current.locations.filter((location) => location.layerId !== selectedLayer.id), ...locations] }).project);
             setSelectedLocationId(pendingImport.result.locations[0]?.id ?? null);
             setActiveSidebar("locations");
             showNotice(`Replaced ${selectedLayer.name} with ${pendingImport.result.locations.length} locations.`);

@@ -739,7 +739,7 @@ async function runSmoke(window) {
   const finalProjectBody = await finalProjectResponse.json();
   const embeddedDesign = finalProjectBody?.result?.project?.customPins?.[0];
   result.customPinEmbedded = customAppliedState.proposalGone && customAppliedState.customPin &&
-    finalProjectBody?.result?.project?.schemaVersion === 4 &&
+    finalProjectBody?.result?.project?.schemaVersion === 5 &&
     finalProjectBody?.result?.project?.layers?.length === 2 &&
     finalProjectBody?.result?.project?.sharedPinStyle?.enabled === true &&
     finalProjectBody?.result?.project?.sharedPinStyle?.customPinId === embeddedDesign?.id &&
@@ -766,7 +766,7 @@ async function runSmoke(window) {
     const autosavedProject = JSON.parse(await fs.readFile(autosaveRecoveryPath(), "utf8"));
     const boundProject = JSON.parse(await fs.readFile(smokeProjectFilePath, "utf8"));
     const autosaveMetadata = JSON.parse(await fs.readFile(autosaveMetadataPath(), "utf8"));
-    result.jsonAutosave = autosavedProject.schemaVersion === 4 &&
+    result.jsonAutosave = autosavedProject.schemaVersion === 5 &&
       autosavedProject.locations?.length === currentProject.locations.length &&
       autosavedProject.layers?.length === 2 && autosavedProject.customPins?.length === 1 &&
       boundProject.project?.updatedAt === autosavedProject.project?.updatedAt &&
@@ -789,7 +789,7 @@ async function runSmoke(window) {
     saveStatus: document.querySelector('.save-status')?.textContent,
     pendingProposal: Boolean(document.querySelector('[data-testid="ai-proposal-banner"]')),
   }))()`);
-  result.autosaveRestoredOnLaunch = autosaveRestoredState.version === "v0.5.1" &&
+  result.autosaveRestoredOnLaunch = autosaveRestoredState.version === "v0.6.0" &&
     autosaveRestoredState.locationCount === String(currentProject.locations.length) &&
     autosaveRestoredState.layerCount === "2" &&
     autosaveRestoredState.customPinCount === currentProject.locations.length &&

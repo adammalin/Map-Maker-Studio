@@ -33,6 +33,15 @@ test("CSV import preserves coordinates and custom columns", () => {
   assert.equal(result.locations[0].latitude, 39.7392);
 });
 
+test("CSV import creates independently styled City, Company, and extra label rows", () => {
+  const result = parseLocationsCsv("city,state,company,label,label_2\nOak Ridge,TN,Example Manufacturing,Oak Ridge,DOE supplier\n");
+  const location = result.locations[0];
+  assert.deepEqual(location.callout.labels.map((label) => label.role), ["city", "company", "custom"]);
+  assert.deepEqual(location.callout.labels.map((label) => label.text), ["Oak Ridge", "Example Manufacturing", "DOE supplier"]);
+  assert.equal(location.customData.company, "Example Manufacturing");
+  assert.equal(location.customData.label_2, undefined);
+});
+
 test("CSV import reports unresolved places without dropping valid rows", () => {
   const result = parseLocationsCsv("city,state\nNot A Real Place,TN\nAtlanta,GA\n");
   assert.equal(result.locations.length, 1);

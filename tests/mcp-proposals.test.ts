@@ -34,6 +34,34 @@ test("MCP can stage independent location visibility without deleting the city", 
   assert.equal(result.proposal.proposed.locations.length, current.locations.length);
 });
 
+test("MCP can stage a complete editable multi-row callout", () => {
+  const current = createDefaultProject();
+  const location = current.locations[0];
+  const callout = structuredClone(location.callout);
+  callout.labels.push({
+    id: "label-company-test",
+    role: "company",
+    text: "Example Manufacturing",
+    visible: true,
+    fontFamily: "Arial",
+    fontSize: 9,
+    fontWeight: 600,
+    color: "#005f83",
+  });
+  callout.leaderLine = "elbow";
+  const result = buildMcpProposal("stage_location_update", {
+    locationId: location.id,
+    patch: { callout },
+    expectedUpdatedAt: current.project.updatedAt,
+    summary: "Add the company label and an elbow leader line",
+  }, current);
+
+  assert.equal(current.locations[0].callout.labels.length, 1);
+  assert.equal(result.proposal.proposed.locations[0].callout.labels[1].text, "Example Manufacturing");
+  assert.equal(result.proposal.proposed.locations[0].callout.labels[1].fontFamily, "Arial");
+  assert.equal(result.proposal.proposed.locations[0].callout.leaderLine, "elbow");
+});
+
 test("MCP proposal creation rejects a stale project timestamp", () => {
   const current = createDefaultProject();
   assert.throws(() => buildMcpProposal("stage_map_style_update", {

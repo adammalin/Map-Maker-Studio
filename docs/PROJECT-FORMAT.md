@@ -7,7 +7,7 @@ USA Map Studio project files are UTF-8 JSON documents normally saved with the `.
 ```json
 {
   "schema": "usa-map-studio/project",
-  "schemaVersion": 4,
+  "schemaVersion": 5,
   "project": {},
   "map": {},
   "layers": [],
@@ -64,17 +64,71 @@ Each location contains:
 
 - stable `id`
 - `layerId`, referencing one object in `layers`
-- `visible`, controlling the complete pin and label on the canvas and in every export
+- `visible`, controlling the complete pin and callout on the canvas and in every export
 - `city` and two-letter `state`
 - numeric `latitude` and `longitude`
-- `label` and `showLabel`
+- legacy-compatible `label` and `showLabel` fields used by older project and MCP clients
 - `pinType`, `pinColor`, and `pinSize`
 - `customPinId`, either `null` for a built-in pin or the ID of a design in `customPins`
 - `labelColor` and `labelPosition`
+- `callout`, containing the current multi-row label system
 - `notes`
 - `customData` for CSV columns not used by the standard schema
 
-Supported pin types are `pin`, `circle`, `square`, `diamond`, and `star`. Supported label positions are `right`, `left`, `above`, and `below`. `visible` is independent of `showLabel`: hiding a location removes both its pin and label from rendered output while preserving all of its data; hiding only its label leaves the pin visible.
+Supported pin types are `pin`, `circle`, `square`, `diamond`, and `star`. The older `label`, `showLabel`, `labelColor`, and `labelPosition` fields remain in version 5 files for compatibility, but `callout` is the authoritative rendered label model. `visible` remains independent of `callout.visible`: hiding a location removes its pin and complete callout from rendered output while preserving all data; hiding only the callout leaves the pin visible.
+
+## Multi-row label callouts
+
+Every location's `callout` stores:
+
+- `visible`
+- ordered `labels`
+- `offsetX` and `offsetY` in the 1200 x 720 map coordinate system
+- horizontal `anchor`: `start`, `middle`, or `end`
+- `placementMode`: `auto` or `manual`
+- `locked`, which prevents **Arrange labels** from moving the callout
+- `leaderLine`: `auto`, `none`, `straight`, or `elbow`
+- `leaderColor` and `leaderWidth`
+
+Each object in `labels` stores a stable `id`, semantic `role` (`city`, `company`, or `custom`), `text`, `visible`, `fontFamily`, `fontSize`, `fontWeight`, and six-digit hex `color`. Supported weights are 400, 500, 600, 700, and 800. Font sizes are 6 through 32 map pixels. A callout can contain up to 20 label rows.
+
+```json
+{
+  "visible": true,
+  "labels": [
+    {
+      "id": "label-example-city",
+      "role": "city",
+      "text": "Oak Ridge, TN",
+      "visible": true,
+      "fontFamily": "Aptos",
+      "fontSize": 11.5,
+      "fontWeight": 800,
+      "color": "#373a36"
+    },
+    {
+      "id": "label-example-company",
+      "role": "company",
+      "text": "Example Manufacturing",
+      "visible": true,
+      "fontFamily": "Arial",
+      "fontSize": 9.5,
+      "fontWeight": 600,
+      "color": "#00454d"
+    }
+  ],
+  "offsetX": 24,
+  "offsetY": -18,
+  "anchor": "start",
+  "placementMode": "manual",
+  "locked": true,
+  "leaderLine": "elbow",
+  "leaderColor": "#526966",
+  "leaderWidth": 1
+}
+```
+
+Dragging a callout writes its exact offsets, sets `placementMode` to `manual`, and locks it. Automatic arrangement moves only unlocked callouts, tests positions around each pin, and can use left or right edge rails for dense areas. Remaining label-to-label collisions and callouts that enter the title, legend, or canvas edge are reported as layout issues. The resolved positions are stored in JSON and reused directly by SVG, PNG, and PowerPoint export rather than being recomputed during export.
 
 ## Autosave and recovery
 
@@ -90,4 +144,4 @@ Atomic replacement writes a private temporary file beside the destination and re
 
 ## Compatibility
 
-Version 0.5.1 writes schema version 4 and also reads schema versions 1 through 3. Canvas zoom and pan are editor-view state rather than project data, so they do not alter rendered coordinates or the portable JSON schema; rendered exports still reproduce the active viewport. Version 1 and 2 projects migrate with one visible `Layer 1 - Locations`; every existing location is assigned to it. Version 1 also receives an empty `customPins` library and `null` custom-pin references. Locations from schema versions 1 through 3 default to `visible: true` when that field is absent. The app rejects unrelated JSON, unsupported schema versions, missing core objects, invalid coordinates, duplicate layer or custom-pin IDs, dangling layer or custom-pin references, and malformed required fields instead of silently dropping data.
+Version 0.6.0 writes schema version 5 and reads schema versions 1 through 4. Canvas zoom and pan are editor-view state rather than project data, so they do not alter rendered coordinates or the portable JSON schema; rendered exports still reproduce the active viewport. Version 1 and 2 projects migrate with one visible `Layer 1 - Locations`; every existing location is assigned to it. Version 1 also receives an empty `customPins` library and `null` custom-pin references. Locations from schema versions 1 through 3 default to `visible: true` when that field is absent. A version 4 location's single label becomes its first City callout row, preserving label text, visibility, color, and right/left/above/below placement. The app rejects unrelated JSON, unsupported schema versions, missing core objects, invalid coordinates, duplicate layer, custom-pin, or per-location label IDs, excessive label rows, dangling layer or custom-pin references, and malformed required fields instead of silently dropping data.

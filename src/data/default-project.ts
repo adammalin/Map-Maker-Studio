@@ -1,5 +1,6 @@
 import type { MapLayer, MapLocation, UsaMapProject } from "../types";
 import { PROJECT_SCHEMA, PROJECT_SCHEMA_VERSION } from "../types";
+import { createDefaultCallout, createLocationLabel } from "../lib/callouts";
 import { materializeEffectivePinStyles } from "../lib/layers";
 
 export const DEFAULT_LAYER_ID = "layer-default";
@@ -39,6 +40,13 @@ export function createLocation(
     pinSize: partial.pinSize ?? 16,
     labelColor: partial.labelColor ?? "#373a36",
     labelPosition: partial.labelPosition ?? "right",
+    callout: partial.callout ?? createDefaultCallout(label, {
+      visible: partial.showLabel ?? true,
+      labels: [createLocationLabel("city", label, { color: partial.labelColor ?? "#373a36" })],
+      offsetX: partial.labelPosition === "left" ? -18 : 18,
+      offsetY: partial.labelPosition === "above" ? -22 : partial.labelPosition === "below" ? 28 : 0,
+      anchor: partial.labelPosition === "left" ? "end" : partial.labelPosition === "above" || partial.labelPosition === "below" ? "middle" : "start",
+    }),
     notes: partial.notes ?? "",
     customData: partial.customData ?? {},
   };

@@ -4,11 +4,20 @@ import JSZip from "jszip";
 import { createDefaultProject } from "../src/data/default-project";
 import { createCustomPinDesign } from "../src/lib/custom-pin";
 import { projectToPowerPoint } from "../src/lib/export";
+import { createLocationLabel } from "../src/lib/callouts";
 
 test("PowerPoint export uses separate editable objects instead of a full-slide image", async () => {
   const project = createDefaultProject();
   project.map.showStateLabels = true;
   project.map.stateColors["47"] = "#fe5000";
+  project.locations[0].callout.labels.push(createLocationLabel("company", "Northwest Fabrication", {
+    fontFamily: "Arial",
+    fontSize: 9,
+    fontWeight: 600,
+    color: "#00454d",
+  }));
+  project.locations[0].callout.offsetX = 86;
+  project.locations[0].callout.leaderLine = "straight";
   const bytes = new Uint8Array(await projectToPowerPoint(project));
   assert.ok(bytes.byteLength > 100_000);
   assert.deepEqual(Array.from(bytes.slice(0, 4)), [0x50, 0x4b, 0x03, 0x04]);
@@ -21,7 +30,10 @@ test("PowerPoint export uses separate editable objects instead of a full-slide i
   assert.ok((slideXml.match(/<p:sp>/g) ?? []).length >= 120, "the slide should contain separately editable objects");
   assert.match(slideXml, /name="State - TN - Tennessee"/);
   assert.match(slideXml, /name="Map title"/);
-  assert.match(slideXml, /name="\[Layer 1: Layer 1 - Locations\] Location label - Seattle, WA"/);
+  assert.match(slideXml, /name="\[Layer 1: Layer 1 - Locations\] City label - Seattle, WA"/);
+  assert.match(slideXml, /name="\[Layer 1: Layer 1 - Locations\] Company label - Northwest Fabrication"/);
+  assert.match(slideXml, /name="\[Layer 1: Layer 1 - Locations\] Leader line 1 - Seattle, WA"/);
+  assert.match(slideXml, /typeface="Arial"/);
   assert.match(slideXml, /name="State label - TN"/);
   assert.match(slideXml, /FE5000/i);
   assert.equal(Object.values(archive.files).filter((entry) => entry.name.startsWith("ppt/media/") && !entry.dir).length, 0);

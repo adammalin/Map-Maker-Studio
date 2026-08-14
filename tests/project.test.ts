@@ -4,6 +4,7 @@ import { createDefaultProject } from "../src/data/default-project";
 import { createCustomPinDesign } from "../src/lib/custom-pin";
 import { parseProjectText, serializeProject } from "../src/lib/project";
 import { PROJECT_SCHEMA, PROJECT_SCHEMA_VERSION } from "../src/types";
+import { createLocationLabel } from "../src/lib/callouts";
 
 test("project JSON round-trips all map and location fields", () => {
   const source = createDefaultProject();
@@ -11,6 +12,13 @@ test("project JSON round-trips all map and location fields", () => {
   source.map.stateColors["47"] = "#7dba00";
   source.locations[0].customData = { owner: "West team", priority: 2, active: true };
   source.locations[0].visible = false;
+  source.locations[0].callout.labels.push(createLocationLabel("company", "Example Company", {
+    fontFamily: "Georgia",
+    fontSize: 14,
+    color: "#00454d",
+  }));
+  source.locations[0].callout.offsetX = 91;
+  source.locations[0].callout.leaderLine = "elbow";
   const restored = parseProjectText(serializeProject(source));
   assert.equal(restored.schema, PROJECT_SCHEMA);
   assert.equal(restored.schemaVersion, PROJECT_SCHEMA_VERSION);
@@ -19,6 +27,11 @@ test("project JSON round-trips all map and location fields", () => {
   assert.equal(restored.map.stateColors["47"], "#7dba00");
   assert.deepEqual(restored.locations[0].customData, { owner: "West team", priority: 2, active: true });
   assert.equal(restored.locations[0].visible, false);
+  assert.equal(restored.locations[0].callout.labels[1].text, "Example Company");
+  assert.equal(restored.locations[0].callout.labels[1].fontFamily, "Georgia");
+  assert.equal(restored.locations[0].callout.labels[1].fontSize, 14);
+  assert.equal(restored.locations[0].callout.offsetX, 91);
+  assert.equal(restored.locations[0].callout.leaderLine, "elbow");
   assert.equal(restored.layers[0].id, source.layers[0].id);
   assert.equal(restored.locations[0].layerId, source.layers[0].id);
 });
@@ -68,7 +81,7 @@ test("schema version 1 projects migrate to an empty custom pin library", () => {
   legacy.schemaVersion = 1;
   delete legacy.customPins;
   const legacyLocations = legacy.locations as Array<Record<string, unknown>>;
-  legacyLocations.forEach((location) => delete location.customPinId);
+  legacyLocations.forEach((location) => { delete location.customPinId; delete location.callout; });
   const migrated = parseProjectText(JSON.stringify(legacy));
   assert.equal(migrated.schemaVersion, PROJECT_SCHEMA_VERSION);
   assert.deepEqual(migrated.customPins, []);
@@ -84,7 +97,7 @@ test("schema version 2 projects migrate all locations into one named layer", () 
   delete legacy.layers;
   delete legacy.sharedPinStyle;
   const legacyLocations = legacy.locations as Array<Record<string, unknown>>;
-  legacyLocations.forEach((location) => delete location.layerId);
+  legacyLocations.forEach((location) => { delete location.layerId; delete location.callout; });
   const migrated = parseProjectText(JSON.stringify(legacy));
   assert.equal(migrated.schemaVersion, PROJECT_SCHEMA_VERSION);
   assert.equal(migrated.layers[0].name, "Layer 1 - Locations");
@@ -95,10 +108,30 @@ test("schema version 3 projects migrate missing location visibility to shown", (
   const legacy = createDefaultProject() as unknown as Record<string, unknown>;
   legacy.schemaVersion = 3;
   const legacyLocations = legacy.locations as Array<Record<string, unknown>>;
-  legacyLocations.forEach((location) => delete location.visible);
+  legacyLocations.forEach((location) => { delete location.visible; delete location.callout; });
   const migrated = parseProjectText(JSON.stringify(legacy));
   assert.equal(migrated.schemaVersion, PROJECT_SCHEMA_VERSION);
   assert.ok(migrated.locations.every((location) => location.visible));
+});
+
+test("schema version 4 labels migrate into editable schema version 5 callouts", () => {
+  const legacy = createDefaultProject() as unknown as Record<string, unknown>;
+  legacy.schemaVersion = 4;
+  const legacyLocations = legacy.locations as Array<Record<string, unknown>>;
+  legacyLocations.forEach((location) => delete location.callout);
+  legacyLocations[0].label = "Seattle office";
+  legacyLocations[0].showLabel = false;
+  legacyLocations[0].labelColor = "#006ba6";
+  legacyLocations[0].labelPosition = "above";
+
+  const migrated = parseProjectText(JSON.stringify(legacy));
+
+  assert.equal(migrated.schemaVersion, PROJECT_SCHEMA_VERSION);
+  assert.equal(migrated.locations[0].callout.visible, false);
+  assert.equal(migrated.locations[0].callout.labels[0].text, "Seattle office");
+  assert.equal(migrated.locations[0].callout.labels[0].color, "#006ba6");
+  assert.equal(migrated.locations[0].callout.anchor, "middle");
+  assert.equal(migrated.locations[0].callout.offsetY, -22);
 });
 
 test("project parser rejects locations assigned to missing layers", () => {

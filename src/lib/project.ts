@@ -1,11 +1,19 @@
 import { createLocation, createMapLayer, DEFAULT_LAYER_ID } from "../data/default-project";
 import { normalizeState } from "../data/state-metadata";
 import { sanitizeCustomPinSvg } from "./custom-pin";
+import { calloutFromLegacyLocation, createDefaultCallout, createLocationLabel } from "./callouts";
 import {
   PROJECT_SCHEMA,
   PROJECT_SCHEMA_VERSION,
   type CustomPinDesign,
+  type CalloutAnchor,
+  type CalloutPlacementMode,
   type LabelPosition,
+  type LeaderLineStyle,
+  type LocationCallout,
+  type LocationLabel,
+  type LocationLabelRole,
+  type LocationLabelWeight,
   type MapLayer,
   type MapLocation,
   type PinType,
@@ -16,6 +24,11 @@ import { materializeEffectivePinStyles, sharedPinStyleFromLocation } from "./lay
 
 const PIN_TYPES = new Set<PinType>(["pin", "circle", "square", "diamond", "star"]);
 const LABEL_POSITIONS = new Set<LabelPosition>(["right", "left", "above", "below"]);
+const CALLOUT_ANCHORS = new Set<CalloutAnchor>(["start", "middle", "end"]);
+const CALLOUT_PLACEMENT_MODES = new Set<CalloutPlacementMode>(["auto", "manual"]);
+const LEADER_LINE_STYLES = new Set<LeaderLineStyle>(["auto", "none", "straight", "elbow"]);
+const LABEL_ROLES = new Set<LocationLabelRole>(["city", "company", "custom"]);
+const LABEL_WEIGHTS = new Set<LocationLabelWeight>([400, 500, 600, 700, 800]);
 const HEX_COLOR = /^#[0-9a-f]{6}$/i;
 
 export function fileSafeName(value: string): string {
@@ -75,6 +88,55 @@ function normalizeLayer(value: unknown, index: number): MapLayer {
   });
 }
 
+function normalizeLocationLabel(value: unknown, index: number, locationId: string): LocationLabel {
+  if (!value || typeof value !== "object") throw new Error(`Label ${index + 1} for ${locationId} is not an object.`);
+  const input = value as Partial<LocationLabel>;
+  const role = LABEL_ROLES.has(input.role as LocationLabelRole) ? input.role as LocationLabelRole : "custom";
+  const weightValue = Number(input.fontWeight);
+  const fontWeight = LABEL_WEIGHTS.has(weightValue as LocationLabelWeight)
+    ? weightValue as LocationLabelWeight
+    : role === "company" ? 600 : 800;
+  return createLocationLabel(role, stringValue(input.text).slice(0, 500), {
+    id: stringValue(input.id, `label-${locationId}-${index + 1}`).trim() || `label-${locationId}-${index + 1}`,
+    visible: input.visible !== false,
+    fontFamily: stringValue(input.fontFamily, "Aptos").trim().slice(0, 100) || "Aptos",
+    fontSize: numberWithin(input.fontSize, role === "company" ? 9.5 : 11.5, 6, 32),
+    fontWeight,
+    color: colorValue(input.color, "#373a36"),
+  });
+}
+
+function normalizeCallout(value: unknown, legacy: Pick<MapLocation, "id" | "label" | "showLabel" | "labelColor" | "labelPosition">): LocationCallout {
+  if (!value || typeof value !== "object") return calloutFromLegacyLocation(legacy);
+  const input = value as Partial<LocationCallout>;
+  const labels = Array.isArray(input.labels)
+    ? input.labels.map((label, index) => normalizeLocationLabel(label, index, legacy.id))
+    : [createLocationLabel("city", legacy.label, { id: `label-${legacy.id}-city`, color: legacy.labelColor })];
+  if (labels.length > 20) throw new Error(`${legacy.label} contains more than 20 callout labels.`);
+  const labelIds = new Set<string>();
+  for (const label of labels) {
+    if (labelIds.has(label.id)) throw new Error(`Label ID ${label.id} appears more than once for ${legacy.label}.`);
+    labelIds.add(label.id);
+  }
+  const fallback = createDefaultCallout(legacy.label);
+  return {
+    visible: input.visible !== false,
+    labels,
+    offsetX: numberWithin(input.offsetX, fallback.offsetX, -1_200, 1_200),
+    offsetY: numberWithin(input.offsetY, fallback.offsetY, -720, 720),
+    anchor: CALLOUT_ANCHORS.has(input.anchor as CalloutAnchor) ? input.anchor as CalloutAnchor : fallback.anchor,
+    placementMode: CALLOUT_PLACEMENT_MODES.has(input.placementMode as CalloutPlacementMode)
+      ? input.placementMode as CalloutPlacementMode
+      : fallback.placementMode,
+    locked: input.locked === true,
+    leaderLine: LEADER_LINE_STYLES.has(input.leaderLine as LeaderLineStyle)
+      ? input.leaderLine as LeaderLineStyle
+      : fallback.leaderLine,
+    leaderColor: colorValue(input.leaderColor, fallback.leaderColor),
+    leaderWidth: numberWithin(input.leaderWidth, fallback.leaderWidth, 0.25, 5),
+  };
+}
+
 function normalizeLocation(
   value: unknown,
   index: number,
@@ -90,6 +152,7 @@ function normalizeLocation(
   const longitude = Number(input.longitude);
   const customPinId = stringValue(input.customPinId).trim() || null;
   const layerId = legacyLayerId ?? stringValue(input.layerId).trim();
+  const id = stringValue(input.id) || `location-imported-${index + 1}`;
   if (!city) throw new Error(`Location ${index + 1} is missing a city.`);
   if (!state) throw new Error(`Location ${index + 1} is missing a state.`);
   if (!Number.isFinite(latitude) || latitude < 15 || latitude > 75) {
@@ -104,25 +167,31 @@ function normalizeLocation(
   if (!layerId || !layerIds.has(layerId)) {
     throw new Error(`Location ${index + 1} references a layer that is not embedded in this project.`);
   }
+  const label = stringValue(input.label, `${city}, ${state}`);
+  const showLabel = typeof input.showLabel === "boolean" ? input.showLabel : true;
+  const labelColor = colorValue(input.labelColor, "#373a36");
+  const labelPosition = LABEL_POSITIONS.has(input.labelPosition as LabelPosition)
+    ? input.labelPosition as LabelPosition
+    : "right";
+  const callout = normalizeCallout(input.callout, { id, label, showLabel, labelColor, labelPosition });
   return createLocation({
     ...input,
-    id: stringValue(input.id) || `location-imported-${index + 1}`,
+    id,
     layerId,
     visible: input.visible !== false,
     city,
     state,
     latitude,
     longitude,
-    label: stringValue(input.label, `${city}, ${state}`),
-    showLabel: typeof input.showLabel === "boolean" ? input.showLabel : true,
+    label,
+    showLabel: callout.visible,
     pinType: PIN_TYPES.has(input.pinType as PinType) ? input.pinType as PinType : "pin",
     customPinId,
     pinColor: colorValue(input.pinColor, "#00662c"),
     pinSize: numberWithin(input.pinSize, 16, 6, 40),
-    labelColor: colorValue(input.labelColor, "#373a36"),
-    labelPosition: LABEL_POSITIONS.has(input.labelPosition as LabelPosition)
-      ? input.labelPosition as LabelPosition
-      : "right",
+    labelColor,
+    labelPosition,
+    callout,
     notes: stringValue(input.notes),
     customData: input.customData && typeof input.customData === "object" ? input.customData : {},
   });
@@ -160,7 +229,7 @@ export function parseProjectText(text: string): UsaMapProject {
   const input = parsed as Partial<UsaMapProject>;
   if (input.schema !== PROJECT_SCHEMA) throw new Error("This is not a USA Map Studio project file.");
   const sourceSchemaVersion = Number(input.schemaVersion);
-  if (![1, 2, 3, PROJECT_SCHEMA_VERSION].includes(sourceSchemaVersion)) {
+  if (![1, 2, 3, 4, PROJECT_SCHEMA_VERSION].includes(sourceSchemaVersion)) {
     throw new Error(`Project schema ${String(input.schemaVersion)} is not supported by this version.`);
   }
   if (!input.project || !input.map || !Array.isArray(input.locations)) {

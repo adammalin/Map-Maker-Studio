@@ -1,8 +1,37 @@
 export const PROJECT_SCHEMA = "usa-map-studio/project";
-export const PROJECT_SCHEMA_VERSION = 4;
+export const PROJECT_SCHEMA_VERSION = 5;
 
 export type PinType = "pin" | "circle" | "square" | "diamond" | "star";
 export type LabelPosition = "right" | "left" | "above" | "below";
+export type CalloutAnchor = "start" | "middle" | "end";
+export type CalloutPlacementMode = "auto" | "manual";
+export type LeaderLineStyle = "auto" | "none" | "straight" | "elbow";
+export type LocationLabelRole = "city" | "company" | "custom";
+export type LocationLabelWeight = 400 | 500 | 600 | 700 | 800;
+
+export interface LocationLabel {
+  id: string;
+  role: LocationLabelRole;
+  text: string;
+  visible: boolean;
+  fontFamily: string;
+  fontSize: number;
+  fontWeight: LocationLabelWeight;
+  color: string;
+}
+
+export interface LocationCallout {
+  visible: boolean;
+  labels: LocationLabel[];
+  offsetX: number;
+  offsetY: number;
+  anchor: CalloutAnchor;
+  placementMode: CalloutPlacementMode;
+  locked: boolean;
+  leaderLine: LeaderLineStyle;
+  leaderColor: string;
+  leaderWidth: number;
+}
 
 export interface CustomPinDesign {
   id: string;
@@ -44,6 +73,7 @@ export interface MapLocation {
   pinSize: number;
   labelColor: string;
   labelPosition: LabelPosition;
+  callout: LocationCallout;
   notes: string;
   customData: Record<string, string | number | boolean | null>;
 }

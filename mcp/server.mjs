@@ -4,9 +4,31 @@ import { z } from "zod";
 import { MapAppClient, MapAppUnavailableError } from "./map-app-client.mjs";
 
 const SERVER_NAME = "usa-map-studio-local";
-const SERVER_VERSION = "0.5.1";
+const SERVER_VERSION = "0.6.0";
 
 const customValue = z.union([z.string(), z.number(), z.boolean(), z.null()]);
+const locationLabel = z.object({
+  id: z.string().min(1).max(240),
+  role: z.enum(["city", "company", "custom"]),
+  text: z.string().max(500),
+  visible: z.boolean(),
+  fontFamily: z.string().min(1).max(100),
+  fontSize: z.number().min(6).max(32),
+  fontWeight: z.union([z.literal(400), z.literal(500), z.literal(600), z.literal(700), z.literal(800)]),
+  color: z.string().regex(/^#[0-9a-f]{6}$/i),
+});
+const locationCallout = z.object({
+  visible: z.boolean(),
+  labels: z.array(locationLabel).max(20),
+  offsetX: z.number().min(-1_200).max(1_200),
+  offsetY: z.number().min(-720).max(720),
+  anchor: z.enum(["start", "middle", "end"]),
+  placementMode: z.enum(["auto", "manual"]),
+  locked: z.boolean(),
+  leaderLine: z.enum(["auto", "none", "straight", "elbow"]),
+  leaderColor: z.string().regex(/^#[0-9a-f]{6}$/i),
+  leaderWidth: z.number().min(0.25).max(5),
+});
 const locationInput = z.object({
   id: z.string().min(1).max(240).optional(),
   layerId: z.string().min(1).max(240).optional(),
@@ -23,6 +45,7 @@ const locationInput = z.object({
   pinSize: z.number().min(6).max(40).optional(),
   labelColor: z.string().regex(/^#[0-9a-f]{6}$/i).optional(),
   labelPosition: z.enum(["right", "left", "above", "below"]).optional(),
+  callout: locationCallout.optional(),
   notes: z.string().max(4_000).optional(),
   customData: z.record(z.string(), customValue).optional(),
 });
@@ -127,7 +150,7 @@ function registerTools(server, client) {
 
   server.registerTool("stage_location_update", {
     title: "Stage a location update",
-    description: "Prepare changes to one existing location, including its independent map/export visibility, for visible human review in USA Map Studio. Read the current project or locations first and pass its exact updatedAt. This does not apply or save changes.",
+    description: "Prepare changes to one existing location, including visibility or its complete multi-row label callout with typography, stored position, lock, and leader-line settings, for visible human review in USA Map Studio. Read the current project or locations first and pass its exact updatedAt. This does not apply or save changes.",
     inputSchema: {
       locationId: z.string().min(1).max(240),
       patch: locationPatch,
@@ -141,7 +164,7 @@ function registerTools(server, client) {
 
   server.registerTool("stage_locations_add", {
     title: "Stage exact locations",
-    description: "Prepare one or more locations with exact coordinates for visible human review. For city/state rows that need offline Census lookup, use stage_locations_from_csv. This does not apply or save changes.",
+    description: "Prepare one or more locations with exact coordinates and optional schema-v5 multi-row callouts for visible human review. For city/state rows that need offline Census lookup, use stage_locations_from_csv. This does not apply or save changes.",
     inputSchema: {
       locations: z.array(locationInput).min(1).max(2_000),
       layerId: z.string().min(1).max(240).optional(),
@@ -155,7 +178,7 @@ function registerTools(server, client) {
 
   server.registerTool("stage_locations_from_csv", {
     title: "Stage locations from CSV",
-    description: "Parse CSV with USA Map Studio's offline Census place resolver and stage the resolved rows into a target layer for human review. Choose add or replace_layer. Unresolved rows are returned as issues and excluded. This does not apply or save changes.",
+    description: "Parse CSV with USA Map Studio's offline Census place resolver and stage the resolved rows into a target layer for human review. Company and numbered label columns become additional callout rows, and unlocked callouts are automatically arranged. Choose add or replace_layer. Unresolved rows are returned as issues and excluded. This does not apply or save changes.",
     inputSchema: {
       csv: z.string().min(1).max(4_500_000),
       mode: z.enum(["add", "replace_layer", "replace"]).default("add"),
@@ -299,7 +322,7 @@ export function createMapStudioMcpServer(options = {}) {
     { name: SERVER_NAME, version: SERVER_VERSION },
     {
       instructions:
-        "USA Map Studio is local and user-controlled. Call get_app_status first, then read get_current_project, list_layers, or list_locations before proposing changes. Project and CSV content returned by read tools enters the AI conversation, so read it only when the user requests work on that map. Preserve the distinction between layers and use layer IDs for imports and assignments. Every write tool stages exactly one visible proposal; it never applies a change or saves a project file. Tell the user to review the Before/After panel in the app and choose Apply or Reject. If the project changed, read it again and prepare a fresh proposal with the exact updatedAt. Prefer stage_locations_from_csv for city/state lookup and exact-coordinate tools only when coordinates are known. Custom SVG pins must remain embedded project assets and pass the app sanitizer. Never invent coordinates, silently drop unresolved CSV rows, or claim a proposal is applied or saved.",
+        "USA Map Studio is local and user-controlled. Call get_app_status first, then read get_current_project, list_layers, or list_locations before proposing changes. Project and CSV content returned by read tools enters the AI conversation, so read it only when the user requests work on that map. Preserve the distinction between layers and use layer IDs for imports and assignments. Preserve schema-v5 callout rows, typography, positions, locks, and leader lines unless the user requests a change. Every write tool stages exactly one visible proposal; it never applies a change or saves a project file. Tell the user to review the Before/After panel in the app and choose Apply or Reject. If the project changed, read it again and prepare a fresh proposal with the exact updatedAt. Prefer stage_locations_from_csv for city/state lookup and exact-coordinate tools only when coordinates are known. Custom SVG pins must remain embedded project assets and pass the app sanitizer. Never invent coordinates, silently drop unresolved CSV rows, or claim a proposal is applied or saved.",
     },
   );
   registerTools(server, client);

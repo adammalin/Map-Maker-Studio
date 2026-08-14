@@ -3,6 +3,7 @@ import {
   Copy,
   MapPin,
   PaintBrush,
+  Plus,
   Trash,
   UploadSimple,
 } from "@phosphor-icons/react";
@@ -12,7 +13,10 @@ import { scopedCustomPinInnerMarkup } from "../lib/custom-pin";
 import { resolveCity } from "../lib/geocoder";
 import { STATE_BY_FIPS, STATES } from "../data/state-metadata";
 import { effectivePinStyle } from "../lib/layers";
-import type { CustomPinDesign, MapLayer, MapLocation, MapSettings, SharedPinStyle } from "../types";
+import { createLocationLabel } from "../lib/callouts";
+import type { CustomPinDesign, LocationLabel, MapLayer, MapLocation, MapSettings, SharedPinStyle } from "../types";
+
+const CALLOUT_FONTS = ["Aptos", "Arial", "Helvetica", "Georgia", "Times New Roman", "Trebuchet MS", "Verdana"];
 
 interface InspectorProps {
   location: MapLocation | null;
@@ -21,9 +25,12 @@ interface InspectorProps {
   customPins: CustomPinDesign[];
   layers: MapLayer[];
   sharedPinStyle: SharedPinStyle;
+  overlapCount: number;
   onUpdateLocation(patch: Partial<MapLocation>): void;
   onUpdateSharedPinStyle(patch: Partial<SharedPinStyle>): void;
   onSetPinEditingScope(scope: "all" | "single"): void;
+  onArrangeCallouts(): void;
+  onApplyLabelStyleToRole(label: LocationLabel): void;
   onUpdateMap(patch: Partial<MapSettings>): void;
   onDuplicateLocation(): void;
   onRemoveLocation(): void;
@@ -78,9 +85,12 @@ export function Inspector({
   customPins,
   layers,
   sharedPinStyle,
+  overlapCount,
   onUpdateLocation,
   onUpdateSharedPinStyle,
   onSetPinEditingScope,
+  onArrangeCallouts,
+  onApplyLabelStyleToRole,
   onUpdateMap,
   onDuplicateLocation,
   onRemoveLocation,
@@ -98,6 +108,21 @@ export function Inspector({
       : null;
     const pinTypeValue = selectedCustomPin ? `custom:${selectedCustomPin.id}` : effectiveStyle.pinType;
     const updatePinStyle = sharedPinStyle.enabled ? onUpdateSharedPinStyle : onUpdateLocation;
+    const updateCallout = (patch: Partial<MapLocation["callout"]>) => {
+      const callout = { ...location.callout, ...patch };
+      onUpdateLocation({ callout, ...(typeof patch.visible === "boolean" ? { showLabel: patch.visible } : {}) });
+    };
+    const updateLabel = (id: string, patch: Partial<LocationLabel>) => {
+      updateCallout({ labels: location.callout.labels.map((label) => label.id === id ? { ...label, ...patch } : label) });
+    };
+    const moveLabel = (id: string, direction: -1 | 1) => {
+      const index = location.callout.labels.findIndex((label) => label.id === id);
+      const target = index + direction;
+      if (index < 0 || target < 0 || target >= location.callout.labels.length) return;
+      const labels = [...location.callout.labels];
+      [labels[index], labels[target]] = [labels[target], labels[index]];
+      updateCallout({ labels });
+    };
     return (
       <aside className="inspector" aria-label="Location inspector" data-testid="location-inspector">
         <div className="inspector__heading">
@@ -198,16 +223,62 @@ export function Inspector({
               <p className="form-hint">Imported SVGs are sanitized, embedded in the project, and available to every location. Shapes using <code>currentColor</code> follow the selected pin color.</p>
             )}
           </section>
-          <section className="form-section">
-            <h3>Label</h3>
-            <label className="toggle-row"><span>Show this label</span><input type="checkbox" checked={location.showLabel} onChange={(event) => onUpdateLocation({ showLabel: event.target.checked })} /></label>
-            <label><span>Text</span><input value={location.label} onChange={(event) => onUpdateLocation({ label: event.target.value })} /></label>
-            <label><span>Position</span>
-              <select value={location.labelPosition} onChange={(event) => onUpdateLocation({ labelPosition: event.target.value as MapLocation["labelPosition"] })}>
-                <option value="right">Right</option><option value="left">Left</option><option value="above">Above</option><option value="below">Below</option>
-              </select>
-            </label>
-            <ColorField label="Text color" value={location.labelColor} onChange={(labelColor) => onUpdateLocation({ labelColor })} />
+          <section className="form-section callout-editor">
+            <div className="form-section__heading">
+              <h3>Labels &amp; callout</h3>
+              <button
+                type="button"
+                className="mini-action"
+                onClick={() => {
+                  const role = location.callout.labels.some((label) => label.role === "company") ? "custom" : "company";
+                  updateCallout({ labels: [...location.callout.labels, createLocationLabel(role, "")] });
+                }}
+              ><Plus size={14} /> Add</button>
+            </div>
+            <label className="toggle-row"><span>Show this callout</span><input type="checkbox" checked={location.callout.visible} onChange={(event) => updateCallout({ visible: event.target.checked })} /></label>
+            <div className={`callout-status${overlapCount ? " callout-status--warning" : ""}`}>
+              <span>{overlapCount ? `${overlapCount} label layout issue${overlapCount === 1 ? "" : "s"}` : "No label overlaps detected"}</span>
+              <button type="button" className="button button--secondary" onClick={onArrangeCallouts}><ArrowsClockwise size={15} /> Arrange labels</button>
+            </div>
+            <label className="toggle-row"><span>Lock this callout position</span><input type="checkbox" checked={location.callout.locked} onChange={(event) => updateCallout({ locked: event.target.checked })} /></label>
+            <p className="form-hint">Drag the callout on the canvas for manual placement; dragging locks it automatically. Unlock it before arranging if the automatic layout should move it again.</p>
+            <div className="field-row">
+              <label><span>Leader line</span>
+                <select value={location.callout.leaderLine} onChange={(event) => updateCallout({ leaderLine: event.target.value as MapLocation["callout"]["leaderLine"] })}>
+                  <option value="auto">Automatic</option><option value="none">None</option><option value="straight">Straight</option><option value="elbow">Elbow</option>
+                </select>
+              </label>
+              <label><span>Line width <em>{location.callout.leaderWidth.toFixed(2)}</em></span><input type="range" min="0.25" max="5" step="0.25" value={location.callout.leaderWidth} onChange={(event) => updateCallout({ leaderWidth: Number(event.target.value) })} /></label>
+            </div>
+            {location.callout.leaderLine !== "none" ? <ColorField label="Leader color" value={location.callout.leaderColor} onChange={(leaderColor) => updateCallout({ leaderColor })} /> : null}
+            <div className="callout-label-list">
+              {location.callout.labels.map((label, index) => (
+                <article className="callout-label-card" key={label.id}>
+                  <header>
+                    <label className="callout-label-role"><span>Label type</span>
+                      <select value={label.role} onChange={(event) => updateLabel(label.id, { role: event.target.value as LocationLabel["role"] })}>
+                        <option value="city">City</option><option value="company">Company</option><option value="custom">Custom</option>
+                      </select>
+                    </label>
+                    <span className="callout-label-actions">
+                      <button type="button" disabled={index === 0} onClick={() => moveLabel(label.id, -1)} aria-label={`Move ${label.role} label up`}>↑</button>
+                      <button type="button" disabled={index === location.callout.labels.length - 1} onClick={() => moveLabel(label.id, 1)} aria-label={`Move ${label.role} label down`}>↓</button>
+                      <button type="button" onClick={() => updateCallout({ labels: location.callout.labels.filter((candidate) => candidate.id !== label.id) })} aria-label={`Remove ${label.role} label`}><Trash size={13} /></button>
+                    </span>
+                  </header>
+                  <label className="toggle-row"><span>Show label row</span><input type="checkbox" checked={label.visible} onChange={(event) => updateLabel(label.id, { visible: event.target.checked })} /></label>
+                  <label><span>Text</span><textarea rows={2} value={label.text} placeholder={label.role === "company" ? "Company name" : label.role === "city" ? "City name" : "Label text"} onChange={(event) => updateLabel(label.id, { text: event.target.value })} /></label>
+                  <div className="field-row">
+                    <label><span>Font</span><select value={label.fontFamily} onChange={(event) => updateLabel(label.id, { fontFamily: event.target.value })}>{CALLOUT_FONTS.map((font) => <option key={font} value={font}>{font}</option>)}</select></label>
+                    <label><span>Weight</span><select value={label.fontWeight} onChange={(event) => updateLabel(label.id, { fontWeight: Number(event.target.value) as LocationLabel["fontWeight"] })}><option value="400">Regular</option><option value="500">Medium</option><option value="600">Semibold</option><option value="700">Bold</option><option value="800">Extra bold</option></select></label>
+                  </div>
+                  <label><span>Size <em>{label.fontSize.toFixed(1)} px</em></span><input type="range" min="6" max="32" step="0.5" value={label.fontSize} onChange={(event) => updateLabel(label.id, { fontSize: Number(event.target.value) })} /></label>
+                  <ColorField label="Text color" value={label.color} onChange={(color) => updateLabel(label.id, { color })} />
+                  <button type="button" className="button button--secondary button--full" onClick={() => onApplyLabelStyleToRole(label)}>Apply style to all {label.role} labels</button>
+                </article>
+              ))}
+              {!location.callout.labels.length ? <p className="form-hint">This callout has no label rows. Add a City, Company, or Custom label.</p> : null}
+            </div>
             <label><span>Notes</span><textarea rows={3} value={location.notes} onChange={(event) => onUpdateLocation({ notes: event.target.value })} /></label>
           </section>
           <div className="inspector__actions">

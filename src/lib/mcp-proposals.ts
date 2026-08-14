@@ -3,6 +3,7 @@ import { parseProjectText } from "./project";
 import { createCustomPinDesign } from "./custom-pin";
 import { createMapLayer } from "../data/default-project";
 import { applySharedPinStylePatch } from "./layers";
+import { arrangeProjectCallouts } from "./callouts";
 import type { AiMapProposal, MapLayer, MapLocation, MapSettings, SharedPinStyle, UsaMapProject } from "../types";
 
 export interface ProposalBuildResult {
@@ -43,6 +44,7 @@ const LOCATION_KEYS = new Set<keyof MapLocation>([
   "pinSize",
   "labelColor",
   "labelPosition",
+  "callout",
   "notes",
   "customData",
 ]);
@@ -126,6 +128,28 @@ function knownPatch<T extends object>(
   return Object.fromEntries(entries) as Partial<T>;
 }
 
+function locationWithLegacyLabelPatch(existing: MapLocation, patch: Partial<MapLocation>): MapLocation {
+  const next = { ...existing, ...patch, id: existing.id };
+  if (patch.callout) return next;
+  let callout = { ...existing.callout, labels: existing.callout.labels.map((label) => ({ ...label })) };
+  if (typeof patch.showLabel === "boolean") callout.visible = patch.showLabel;
+  const primaryIndex = Math.max(0, callout.labels.findIndex((label) => label.role === "city"));
+  if (callout.labels[primaryIndex]) {
+    if (typeof patch.label === "string") callout.labels[primaryIndex].text = patch.label;
+    if (typeof patch.labelColor === "string") callout.labels[primaryIndex].color = patch.labelColor;
+  }
+  if (patch.labelPosition) {
+    const offsets = {
+      right: { offsetX: 18, offsetY: 0, anchor: "start" as const },
+      left: { offsetX: -18, offsetY: 0, anchor: "end" as const },
+      above: { offsetX: 0, offsetY: -22, anchor: "middle" as const },
+      below: { offsetX: 0, offsetY: 28, anchor: "middle" as const },
+    };
+    callout = { ...callout, ...offsets[patch.labelPosition], placementMode: "manual", locked: true };
+  }
+  return { ...next, callout, showLabel: callout.visible };
+}
+
 export function buildMcpProposal(
   operation: string,
   inputValue: unknown,
@@ -154,7 +178,7 @@ export function buildMcpProposal(
     const patch = knownPatch<MapLocation>(input.patch, LOCATION_KEYS, "Location patch");
     const candidate = structuredClone(current);
     candidate.locations = candidate.locations.map((location) =>
-      location.id === locationId ? { ...location, ...patch, id: location.id } : location,
+      location.id === locationId ? locationWithLegacyLabelPatch(location, patch) : location,
     );
     const next = normalizeCandidate(candidate, current);
     return {
@@ -182,7 +206,8 @@ export function buildMcpProposal(
           : `location-ai-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${index}`}`,
       };
     }) as unknown as MapLocation[];
-    const next = normalizeCandidate({ ...structuredClone(current), locations: [...current.locations, ...additions] }, current);
+    const normalized = normalizeCandidate({ ...structuredClone(current), locations: [...current.locations, ...additions] }, current);
+    const next = normalizeCandidate(arrangeProjectCallouts(normalized).project, current);
     return {
       proposal: proposal(current, next, operation, requestedSummary, [
         `Add ${additions.length} location${additions.length === 1 ? "" : "s"}.`,
@@ -205,7 +230,7 @@ export function buildMcpProposal(
     candidate.locations = mode === "replace_layer"
       ? [...candidate.locations.filter((location) => location.layerId !== targetLayer.id), ...imported.locations]
       : [...candidate.locations, ...imported.locations];
-    const next = normalizeCandidate(candidate, current);
+    const next = normalizeCandidate(arrangeProjectCallouts(normalizeCandidate(candidate, current)).project, current);
     return {
       proposal: proposal(current, next, operation, requestedSummary, [
         `${mode === "replace_layer" ? `Replace ${targetLayer.name} with` : `Add to ${targetLayer.name}`} ${imported.locations.length} resolved CSV location${imported.locations.length === 1 ? "" : "s"}.`,

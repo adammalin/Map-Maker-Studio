@@ -1,6 +1,7 @@
 import { forwardRef, useMemo, useRef, useState } from "react";
 import type { Feature, Geometry } from "geojson";
 import { STATE_BY_FIPS } from "../data/state-metadata";
+import { calloutBox, calloutConnector, measureCallout, primaryCalloutText } from "../lib/callouts";
 import { customPinTransform, scopedCustomPinInnerMarkup } from "../lib/custom-pin";
 import { effectivePinStyle, svgLayerId, visibleLocations } from "../lib/layers";
 import { countyBoundaries, mapPath as path, projection, stateBoundaries, states } from "../lib/map-geometry";
@@ -15,19 +16,14 @@ interface MapCanvasProps {
   zoom: number;
   pan: { x: number; y: number };
   spacePressed: boolean;
+  overlapLocationIds: ReadonlySet<string>;
   onSelectLocation(id: string | null): void;
   onSelectState(fips: string | null): void;
   onMoveLocation(id: string, latitude: number, longitude: number): void;
+  onMoveCallout(id: string, offsetX: number, offsetY: number): void;
   onPanChange(pan: { x: number; y: number }): void;
   onZoomChange(zoom: number): void;
 }
-
-const labelOffsets: Record<MapLocation["labelPosition"], { x: number; y: number; anchor: "start" | "middle" | "end" }> = {
-  right: { x: 14, y: 4, anchor: "start" },
-  left: { x: -14, y: 4, anchor: "end" },
-  above: { x: 0, y: -16, anchor: "middle" },
-  below: { x: 0, y: 24, anchor: "middle" },
-};
 
 function starPoints(radius: number): string {
   return Array.from({ length: 10 }, (_, index) => {
@@ -86,15 +82,22 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(function MapC
     zoom,
     pan,
     spacePressed,
+    overlapLocationIds,
     onSelectLocation,
     onSelectState,
     onMoveLocation,
+    onMoveCallout,
     onPanChange,
     onZoomChange,
   },
   forwardedRef,
 ) {
   const draggingLocation = useRef<string | null>(null);
+  const draggingCallout = useRef<{
+    id: string;
+    start: [number, number];
+    origin: { x: number; y: number };
+  } | null>(null);
   const panning = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number } | null>(null);
   const suppressNextClick = useRef(false);
   const [isPanning, setIsPanning] = useState(false);
@@ -119,14 +122,18 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(function MapC
 
   const groupTransform = `translate(${pan.x} ${pan.y}) translate(${MAP_TRANSFORM_CENTER.x} ${MAP_TRANSFORM_CENTER.y}) scale(${zoom}) translate(${-MAP_TRANSFORM_CENTER.x} ${-MAP_TRANSFORM_CENTER.y})`;
 
-  function pointerToMap(event: React.PointerEvent<SVGSVGElement>): [number, number] {
-    const bounds = event.currentTarget.getBoundingClientRect();
-    const displayX = (event.clientX - bounds.left) * (MAP_CANVAS_WIDTH / bounds.width);
-    const displayY = (event.clientY - bounds.top) * (MAP_CANVAS_HEIGHT / bounds.height);
+  function clientToMap(svg: SVGSVGElement, clientX: number, clientY: number): [number, number] {
+    const bounds = svg.getBoundingClientRect();
+    const displayX = (clientX - bounds.left) * (MAP_CANVAS_WIDTH / bounds.width);
+    const displayY = (clientY - bounds.top) * (MAP_CANVAS_HEIGHT / bounds.height);
     return [
       (displayX - pan.x - MAP_TRANSFORM_CENTER.x * (1 - zoom)) / zoom,
       (displayY - pan.y - MAP_TRANSFORM_CENTER.y * (1 - zoom)) / zoom,
     ];
+  }
+
+  function pointerToMap(event: React.PointerEvent<SVGSVGElement>): [number, number] {
+    return clientToMap(event.currentTarget, event.clientX, event.clientY);
   }
 
   function handlePointerMove(event: React.PointerEvent<SVGSVGElement>) {
@@ -140,6 +147,15 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(function MapC
       });
       return;
     }
+    if (draggingCallout.current) {
+      const current = pointerToMap(event);
+      onMoveCallout(
+        draggingCallout.current.id,
+        draggingCallout.current.origin.x + current[0] - draggingCallout.current.start[0],
+        draggingCallout.current.origin.y + current[1] - draggingCallout.current.start[1],
+      );
+      return;
+    }
     if (draggingLocation.current) {
       const coordinate = projection.invert?.(pointerToMap(event));
       if (coordinate) onMoveLocation(draggingLocation.current, coordinate[1], coordinate[0]);
@@ -148,6 +164,7 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(function MapC
 
   function stopPointerAction(event: React.PointerEvent<SVGSVGElement>) {
     draggingLocation.current = null;
+    draggingCallout.current = null;
     panning.current = null;
     setIsPanning(false);
     window.setTimeout(() => { suppressNextClick.current = false; }, 0);
@@ -173,6 +190,7 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(function MapC
         event.stopPropagation();
         event.currentTarget.setPointerCapture(event.pointerId);
         draggingLocation.current = null;
+        draggingCallout.current = null;
         panning.current = {
           pointerId: event.pointerId,
           startX: event.clientX,
@@ -327,8 +345,13 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(function MapC
             >
           {locations.map(({ location, style, point: [x, y] }) => {
             const selected = location.id === selectedLocationId;
-            const offset = labelOffsets[location.labelPosition];
-            const labelX = offset.x + (offset.anchor === "start" ? style.pinSize * 0.25 : offset.anchor === "end" ? -style.pinSize * 0.25 : 0);
+            const metrics = measureCallout(location.callout);
+            const box = calloutBox([0, 0], location.callout, metrics);
+            const connector = calloutConnector([0, 0], location.callout, metrics, style.pinSize * 0.55);
+            const showCallout = project.map.showLocationLabels
+              && location.callout.visible
+              && metrics.rows.length > 0;
+            const overlapping = overlapLocationIds.has(location.id);
             return (
               <g
                 key={location.id}
@@ -338,7 +361,7 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(function MapC
                 data-layer-id={layer.id}
                 data-effective-pin-size={style.pinSize}
                 data-effective-pin-type={style.customPinId ? "custom" : style.pinType}
-                aria-label={`${location.label} in ${layer.name} at ${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}`}
+                aria-label={`${primaryCalloutText(location)} in ${layer.name} at ${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}`}
                 onClick={(event) => {
                   event.stopPropagation();
                   onSelectState(null);
@@ -357,38 +380,99 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(function MapC
                   <circle r={style.pinSize * 0.82} fill="none" stroke="#fe5000" strokeWidth="2.4" strokeDasharray="4 3" vectorEffect="non-scaling-stroke" data-editor-only="true" />
                 ) : null}
                 <PinSymbol location={location} style={style} customPin={style.customPinId ? customPins.get(style.customPinId) : undefined} />
-                {project.map.showLocationLabels && location.showLabel ? (
-                  <g aria-hidden="true" pointerEvents="none">
-                    <text
-                      data-label-halo="true"
-                      x={labelX}
-                      y={offset.y}
-                      textAnchor={offset.anchor}
-                      dominantBaseline="central"
-                      fill={project.map.labelHaloColor}
-                      stroke={project.map.labelHaloColor}
-                      strokeWidth="4"
-                      strokeLinejoin="round"
-                      fontFamily="Aptos, Arial, sans-serif"
-                      fontSize="11.5"
-                      fontWeight="800"
+                {showCallout ? (
+                  <g className={`map-callout${overlapping ? " has-overlap" : ""}`} data-location-callout="true">
+                    {connector.visible ? (
+                      <polyline
+                        points={connector.points.map(([pointX, pointY]) => `${pointX},${pointY}`).join(" ")}
+                        fill="none"
+                        stroke={location.callout.leaderColor}
+                        strokeWidth={location.callout.leaderWidth}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        vectorEffect="non-scaling-stroke"
+                        data-callout-leader="true"
+                        pointerEvents="none"
+                      />
+                    ) : null}
+                    <g
+                      transform={`translate(${location.callout.offsetX} ${location.callout.offsetY})`}
+                      role="button"
+                      aria-label={`Move labels for ${location.label}`}
+                      className="map-callout__content"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onSelectState(null);
+                        onSelectLocation(location.id);
+                      }}
+                      onPointerDown={(event) => {
+                        event.stopPropagation();
+                        const svg = event.currentTarget.ownerSVGElement;
+                        if (!svg) return;
+                        svg.setPointerCapture(event.pointerId);
+                        draggingLocation.current = null;
+                        draggingCallout.current = {
+                          id: location.id,
+                          start: clientToMap(svg, event.clientX, event.clientY),
+                          origin: { x: location.callout.offsetX, y: location.callout.offsetY },
+                        };
+                        onSelectState(null);
+                        onSelectLocation(location.id);
+                      }}
                     >
-                      {location.label}
-                    </text>
-                    <text
-                      data-label-text="true"
-                      x={labelX}
-                      y={offset.y}
-                      textAnchor={offset.anchor}
-                      dominantBaseline="central"
-                      fill={location.labelColor}
-                      stroke="none"
-                      fontFamily="Aptos, Arial, sans-serif"
-                      fontSize="11.5"
-                      fontWeight="800"
-                    >
-                      {location.label}
-                    </text>
+                      <rect
+                        x={box.left - location.callout.offsetX - 5}
+                        y={box.top - location.callout.offsetY - 4}
+                        width={box.width + 10}
+                        height={box.height + 8}
+                        fill="transparent"
+                        stroke={overlapping ? "#c43c1c" : selected ? "#fe5000" : "none"}
+                        strokeWidth={overlapping || selected ? 1.5 : 0}
+                        strokeDasharray={overlapping ? "3 2" : "4 3"}
+                        vectorEffect="non-scaling-stroke"
+                        data-editor-only="true"
+                      />
+                      {metrics.rows.map((row) => {
+                        const rowY = -metrics.height / 2 + row.y;
+                        return (
+                          <g key={row.label.id} data-callout-label-id={row.label.id}>
+                            <text
+                              data-label-halo="true"
+                              aria-hidden="true"
+                              x="0"
+                              y={rowY}
+                              textAnchor={location.callout.anchor}
+                              dominantBaseline="hanging"
+                              fill={project.map.labelHaloColor}
+                              stroke={project.map.labelHaloColor}
+                              strokeWidth="2.5"
+                              strokeLinejoin="round"
+                              fontFamily={`${row.label.fontFamily}, Arial, sans-serif`}
+                              fontSize={row.label.fontSize}
+                              fontWeight={row.label.fontWeight}
+                              pointerEvents="none"
+                            >
+                              {row.label.text}
+                            </text>
+                            <text
+                              data-label-text="true"
+                              x="0"
+                              y={rowY}
+                              textAnchor={location.callout.anchor}
+                              dominantBaseline="hanging"
+                              fill={row.label.color}
+                              stroke="none"
+                              fontFamily={`${row.label.fontFamily}, Arial, sans-serif`}
+                              fontSize={row.label.fontSize}
+                              fontWeight={row.label.fontWeight}
+                              pointerEvents="none"
+                            >
+                              {row.label.text}
+                            </text>
+                          </g>
+                        );
+                      })}
+                    </g>
                   </g>
                 ) : null}
               </g>
