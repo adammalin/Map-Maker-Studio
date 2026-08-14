@@ -41,6 +41,7 @@ test("source setup scripts build and smoke-test without creating installers", ()
   assert.match(guideSource, /Mac relaunch/);
   assert.match(guideSource, /Windows relaunch/);
   assert.match(guideSource, /multi-row label callouts/i);
+  assert.match(guideSource, /zoom and pan autosave/i);
   assert.match(guideSource, /Arrange labels/);
   assert.match(guideSource, /https:\/\/github\.com\/adammalin\/Map-Maker-Studio/);
   assert.match(readme, /\$HOME\/Map-Maker-Studio\/Start-USA-Map-Studio\.command/);

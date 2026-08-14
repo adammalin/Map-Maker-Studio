@@ -23,7 +23,7 @@ function createId(prefix: string): string {
 export function createLocation(
   partial: Partial<MapLocation> & Pick<MapLocation, "city" | "state" | "latitude" | "longitude">,
 ): MapLocation {
-  const label = partial.label?.trim() || `${partial.city}, ${partial.state}`;
+  const label = partial.label?.replace(/\s+/g, " ").trim() || `${partial.city}, ${partial.state}`;
   return {
     id: partial.id ?? createId("location"),
     layerId: partial.layerId ?? DEFAULT_LAYER_ID,
@@ -96,6 +96,10 @@ export function createDefaultProject(): UsaMapProject {
       showLocationLabels: true,
       showLegend: true,
       stateColors: {},
+    },
+    viewport: {
+      zoom: 1,
+      pan: { x: 0, y: 0 },
     },
     layers: [defaultLayer],
     sharedPinStyle: {

@@ -1,3 +1,5 @@
+import type { MapViewport } from "../types";
+
 export const MAP_CANVAS_WIDTH = 1200;
 export const MAP_CANVAS_HEIGHT = 720;
 export const MAP_TRANSFORM_CENTER = { x: 600, y: 390 } as const;
@@ -9,11 +11,6 @@ export const MAP_ZOOM_FACTOR = 1.2;
 export interface MapPoint {
   x: number;
   y: number;
-}
-
-export interface MapViewport {
-  zoom: number;
-  pan: MapPoint;
 }
 
 export interface CanvasRect {

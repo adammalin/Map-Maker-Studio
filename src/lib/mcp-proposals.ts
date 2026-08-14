@@ -1,5 +1,5 @@
 import { parseLocationsCsv } from "./csv";
-import { parseProjectText } from "./project";
+import { mergeLocationPatch, parseProjectText } from "./project";
 import { createCustomPinDesign } from "./custom-pin";
 import { createMapLayer } from "../data/default-project";
 import { applySharedPinStylePatch } from "./layers";
@@ -129,9 +129,9 @@ function knownPatch<T extends object>(
 }
 
 function locationWithLegacyLabelPatch(existing: MapLocation, patch: Partial<MapLocation>): MapLocation {
-  const next = { ...existing, ...patch, id: existing.id };
+  const next = mergeLocationPatch(existing, patch);
   if (patch.callout) return next;
-  let callout = { ...existing.callout, labels: existing.callout.labels.map((label) => ({ ...label })) };
+  let callout = { ...next.callout, labels: next.callout.labels.map((label) => ({ ...label })) };
   if (typeof patch.showLabel === "boolean") callout.visible = patch.showLabel;
   const primaryIndex = Math.max(0, callout.labels.findIndex((label) => label.role === "city"));
   if (callout.labels[primaryIndex]) {

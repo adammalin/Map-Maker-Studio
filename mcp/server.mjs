@@ -114,7 +114,7 @@ function registerTools(server, client) {
 
   server.registerTool("get_current_project", {
     title: "Read the open map project",
-    description: "Read the complete working USA Map Studio project, including map style, ordered layers, visibility, shared pin style, every location, labels, coordinates, custom data, and the updatedAt stale-write guard. Only call when the user wants this project content in the AI conversation.",
+    description: "Read the complete working USA Map Studio project, including map style, saved zoom/pan viewport, ordered layers, visibility, shared pin style, every location, labels, coordinates, custom data, and the updatedAt stale-write guard. Only call when the user wants this project content in the AI conversation.",
     inputSchema: {},
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
   }, () => call(client, "get_current_project", {}, (result) =>

@@ -310,6 +310,7 @@ function registerIpc() {
 
 async function runSmoke(window) {
   const smokeProjectFilePath = path.join(autosaveDirectory(), "smoke-bound-project.usmap.json");
+  const smokeExportQaDirectory = process.env.USA_MAP_STUDIO_SMOKE_EXPORT_QA_DIR?.trim() || null;
   activeProjectFilePath = smokeProjectFilePath;
   const result = await window.webContents.executeJavaScript(`(() => {
     const shell = document.querySelector('[data-testid="studio-shell"]');
@@ -570,6 +571,74 @@ async function runSmoke(window) {
   await new Promise((resolve) => setTimeout(resolve, 80));
   await window.webContents.executeJavaScript(`document.querySelector('[data-workspace-mode="map"]')?.click()`);
   await new Promise((resolve) => setTimeout(resolve, 80));
+  await window.webContents.executeJavaScript(`document.querySelector('.callout-editor .mini-action')?.click()`);
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  const calloutControlsEdited = await window.webContents.executeJavaScript(`(() => {
+    const card = [...document.querySelectorAll('.callout-label-card')]
+      .find((candidate) => candidate.querySelector('.callout-label-role select')?.value === 'company');
+    const textInput = card?.querySelector('input[placeholder="Company name"]');
+    const fontSelect = card?.querySelectorAll('select')[1];
+    const weightSelect = card?.querySelectorAll('select')[2];
+    const sizeInput = card?.querySelector('input[aria-label="company label size"]');
+    const leaderSelect = document.querySelector('.callout-editor > .field-row select');
+    const leaderWidth = document.querySelector('input[aria-label="Leader line width"]');
+    const inputSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    const selectSetter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;
+    const setInput = (input, value) => {
+      if (!input || !inputSetter) return false;
+      inputSetter.call(input, value);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      return true;
+    };
+    const setSelect = (select, value) => {
+      if (!select || !selectSetter) return false;
+      selectSetter.call(select, value);
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      return true;
+    };
+    return setInput(textInput, 'Smoke Test Company') &&
+      setSelect(fontSelect, 'Arial') && setSelect(weightSelect, '600') &&
+      setInput(sizeInput, '18.5') && setSelect(leaderSelect, 'elbow') &&
+      setInput(leaderWidth, '2.25');
+  })()`);
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  const calloutDragState = await window.webContents.executeJavaScript(`(() => {
+    const svg = document.querySelector('[data-testid="map-svg"]');
+    const callout = document.querySelector('.map-location.is-selected .map-callout__content');
+    if (!svg || !callout) return null;
+    const before = callout.getAttribute('transform');
+    const bounds = callout.getBoundingClientRect();
+    const originalCapture = svg.setPointerCapture.bind(svg);
+    svg.setPointerCapture = () => {};
+    callout.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 48, button: 0, buttons: 1, clientX: bounds.x + bounds.width / 2, clientY: bounds.y + bounds.height / 2 }));
+    svg.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 48, button: 0, buttons: 1, clientX: bounds.x + bounds.width / 2 + 52, clientY: bounds.y + bounds.height / 2 - 28 }));
+    svg.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 48, button: 0, buttons: 0, clientX: bounds.x + bounds.width / 2 + 52, clientY: bounds.y + bounds.height / 2 - 28 }));
+    svg.setPointerCapture = originalCapture;
+    return { before };
+  })()`);
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  const calloutEditedState = await window.webContents.executeJavaScript(`(() => {
+    const textRows = document.querySelectorAll('.map-location.is-selected [data-label-text="true"]');
+    const lockInputs = document.querySelectorAll('.callout-editor > .toggle-row input');
+    const callout = document.querySelector('.map-location.is-selected .map-callout__content');
+    return {
+      rowCount: textRows.length,
+      companyText: textRows[1]?.textContent,
+      companyFont: textRows[1]?.getAttribute('font-family'),
+      companyWeight: textRows[1]?.getAttribute('font-weight'),
+      companySize: textRows[1]?.getAttribute('font-size'),
+      leaderStyle: document.querySelector('.callout-editor > .field-row select')?.value,
+      leaderWidth: document.querySelector('.map-location.is-selected [data-callout-leader="true"]')?.getAttribute('stroke-width'),
+      locked: lockInputs[1]?.checked,
+      after: callout?.getAttribute('transform'),
+    };
+  })()`);
+  result.calloutEditing = calloutControlsEdited && calloutEditedState.rowCount === 2 &&
+    calloutEditedState.companyText === "Smoke Test Company" && /Arial/.test(calloutEditedState.companyFont || "") &&
+    calloutEditedState.companyWeight === "600" && calloutEditedState.companySize === "18.5" &&
+    calloutEditedState.leaderStyle === "elbow" && calloutEditedState.leaderWidth === "2.25" &&
+    calloutEditedState.locked === true && calloutDragState?.before !== calloutEditedState.after;
   const unauthorized = await fetch(new URL("command", mcpAddress), {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -635,6 +704,70 @@ async function runSmoke(window) {
   });
   const currentBody = await currentResponse.json();
   const currentProject = currentBody?.result?.project;
+  const proposedCallout = structuredClone(currentProject.locations[1].callout);
+  proposedCallout.labels.push({
+    id: "label-smoke-mcp-company",
+    role: "company",
+    text: "MCP Company",
+    visible: true,
+    fontFamily: "Arial",
+    fontSize: 12.5,
+    fontWeight: 600,
+    color: "#005f83",
+  });
+  proposedCallout.leaderLine = "straight";
+  proposedCallout.leaderColor = "#005f83";
+  proposedCallout.leaderWidth = 1.75;
+  const calloutStage = await fetch(new URL("command", mcpAddress), {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-usa-map-studio-token": mcpToken,
+    },
+    body: JSON.stringify({
+      operation: "stage_location_update",
+      input: {
+        locationId: currentProject.locations[1].id,
+        patch: { callout: proposedCallout },
+        expectedUpdatedAt: currentProject.project.updatedAt,
+        summary: "Smoke-test an MCP Company callout",
+      },
+    }),
+  });
+  const calloutStageBody = await calloutStage.json();
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  const calloutReviewState = await window.webContents.executeJavaScript(`(() => ({
+    dialog: Boolean(document.querySelector('[data-testid="ai-proposal-dialog"]')),
+    beforeApply: [...document.querySelectorAll('[data-label-text="true"]')]
+      .some((label) => label.textContent === 'MCP Company'),
+  }))()`);
+  result.mcpCalloutProposalStaged = calloutStage.ok && calloutStageBody?.result?.applied === false &&
+    calloutReviewState.dialog && calloutReviewState.beforeApply === false;
+  await window.webContents.executeJavaScript(`(() => {
+    const apply = [...document.querySelectorAll('.ai-proposal-actions button')]
+      .find((button) => button.textContent?.includes('Apply to working map'));
+    apply?.click();
+  })()`);
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  const calloutAppliedState = await window.webContents.executeJavaScript(`(() => ({
+    proposalGone: !document.querySelector('[data-testid="ai-proposal-banner"]'),
+    labels: [...document.querySelectorAll('[data-label-text="true"]')]
+      .filter((label) => label.textContent === 'MCP Company')
+      .map((label) => ({ font: label.getAttribute('font-family'), size: label.getAttribute('font-size') })),
+  }))()`);
+  result.mcpCalloutProposalApplied = calloutAppliedState.proposalGone &&
+    calloutAppliedState.labels.length === 1 && /Arial/.test(calloutAppliedState.labels[0].font || "") &&
+    calloutAppliedState.labels[0].size === "12.5";
+  const afterCalloutResponse = await fetch(new URL("command", mcpAddress), {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-usa-map-studio-token": mcpToken,
+    },
+    body: JSON.stringify({ operation: "get_current_project", input: {} }),
+  });
+  const afterCalloutBody = await afterCalloutResponse.json();
+  const afterCalloutProject = afterCalloutBody?.result?.project;
   const customStage = await fetch(new URL("command", mcpAddress), {
     method: "POST",
     headers: {
@@ -647,7 +780,7 @@ async function runSmoke(window) {
         name: "Smoke-test Illustrator gradient",
         svg: '<svg viewBox="0 0 24 24" onload="bad()"><defs><style>.st0 { fill: url(#linear-gradient); stroke: #f9a013; stroke-width: 1.25; }</style><linearGradient id="linear-gradient" x1="12" y1="0" x2="12" y2="24" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#f9a013"/><stop offset="1" stop-color="#fefcee"/></linearGradient></defs><script>bad()</script><circle class="st0" cx="12" cy="12" r="11"/></svg>',
         assignToAll: true,
-        expectedUpdatedAt: currentProject?.project?.updatedAt,
+        expectedUpdatedAt: afterCalloutProject?.project?.updatedAt,
         summary: "Smoke-test embedded custom pin",
       },
     }),
@@ -689,6 +822,10 @@ async function runSmoke(window) {
     clone?.querySelectorAll('[data-editor-only]').forEach((element) => element.remove());
     const exportMarkup = clone ? new XMLSerializer().serializeToString(clone) : '';
     let rasterized = false;
+    let rasterWidth = 0;
+    let rasterHeight = 0;
+    let rasterBytes = 0;
+    let rasterDataUrl = null;
     if (exportMarkup) {
       const url = URL.createObjectURL(new Blob([exportMarkup], { type: 'image/svg+xml' }));
       try {
@@ -699,11 +836,23 @@ async function runSmoke(window) {
           image.src = url;
         });
         const canvas = document.createElement('canvas');
-        canvas.width = 1200;
-        canvas.height = 720;
+        canvas.width = 2400;
+        canvas.height = 1440;
         const context = canvas.getContext('2d');
+        context?.scale(2, 2);
         context?.drawImage(image, 0, 0, 1200, 720);
         rasterized = Boolean(context);
+        rasterWidth = canvas.width;
+        rasterHeight = canvas.height;
+        const rasterBlob = await new Promise((resolve) => canvas.toBlob((blob) => resolve(blob), 'image/png'));
+        rasterBytes = rasterBlob?.size || 0;
+        if (rasterBlob && ${Boolean(smokeExportQaDirectory)}) {
+          rasterDataUrl = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.readAsDataURL(rasterBlob);
+          });
+        }
       } finally {
         URL.revokeObjectURL(url);
       }
@@ -724,10 +873,27 @@ async function runSmoke(window) {
         .map((location) => location.getAttribute('data-effective-pin-size')))],
       exportedPinSizeCount: (exportMarkup.match(/data-effective-pin-size="29"/g) || []).length,
       customPinRasterized: rasterized,
+      rasterWidth,
+      rasterHeight,
+      rasterBytes,
+      viewportTransform: document.querySelector('[data-testid="map-viewport-transform"]')?.getAttribute('transform') || null,
+      exportMarkup: ${Boolean(smokeExportQaDirectory)} ? exportMarkup : null,
+      rasterDataUrl,
       deleteButtonWidth: document.querySelector('.custom-pin-card__delete')?.getBoundingClientRect().width || 0,
       deleteIconWidth: document.querySelector('.custom-pin-card__delete svg')?.getBoundingClientRect().width || 0,
     };
   })()`);
+  if (smokeExportQaDirectory && customAppliedState.exportMarkup && customAppliedState.rasterDataUrl) {
+    await fs.mkdir(smokeExportQaDirectory, { recursive: true });
+    const svgQaPath = path.join(smokeExportQaDirectory, "usa-map-studio-smoke.svg");
+    const pngQaPath = path.join(smokeExportQaDirectory, "usa-map-studio-smoke.png");
+    await fs.writeFile(svgQaPath, customAppliedState.exportMarkup, "utf8");
+    await fs.writeFile(pngQaPath, Buffer.from(customAppliedState.rasterDataUrl.split(",")[1], "base64"));
+    result.exportQaSvgPath = svgQaPath;
+    result.exportQaPngPath = pngQaPath;
+  }
+  delete customAppliedState.exportMarkup;
+  delete customAppliedState.rasterDataUrl;
   const finalProjectResponse = await fetch(new URL("command", mcpAddress), {
     method: "POST",
     headers: {
@@ -738,6 +904,21 @@ async function runSmoke(window) {
   });
   const finalProjectBody = await finalProjectResponse.json();
   const embeddedDesign = finalProjectBody?.result?.project?.customPins?.[0];
+  const calloutLocation = finalProjectBody?.result?.project?.locations?.find((location) =>
+    location.callout?.labels?.some((label) => label.text === "Smoke Test Company"),
+  );
+  const companyLabel = calloutLocation?.callout?.labels?.find((label) => label.text === "Smoke Test Company");
+  const mcpCalloutLocation = finalProjectBody?.result?.project?.locations?.find((location) =>
+    location.callout?.labels?.some((label) => label.text === "MCP Company"),
+  );
+  const mcpCompanyLabel = mcpCalloutLocation?.callout?.labels?.find((label) => label.text === "MCP Company");
+  result.calloutEmbedded = companyLabel?.role === "company" && companyLabel?.fontFamily === "Arial" &&
+    companyLabel?.fontSize === 18.5 && companyLabel?.fontWeight === 600 &&
+    calloutLocation?.callout?.leaderLine === "elbow" && calloutLocation?.callout?.leaderWidth === 2.25 &&
+    calloutLocation?.callout?.locked === true && calloutLocation?.callout?.placementMode === "manual";
+  result.mcpCalloutEmbedded = mcpCompanyLabel?.role === "company" && mcpCompanyLabel?.fontFamily === "Arial" &&
+    mcpCompanyLabel?.fontSize === 12.5 && mcpCompanyLabel?.fontWeight === 600 &&
+    mcpCalloutLocation?.callout?.leaderLine === "straight" && mcpCalloutLocation?.callout?.leaderWidth === 1.75;
   result.customPinEmbedded = customAppliedState.proposalGone && customAppliedState.customPin &&
     finalProjectBody?.result?.project?.schemaVersion === 5 &&
     finalProjectBody?.result?.project?.layers?.length === 2 &&
@@ -759,6 +940,8 @@ async function runSmoke(window) {
   result.customPinLiveFill = customAppliedState.livePinFill;
   result.customPinRasterized = customAppliedState.customPinRasterized;
   result.customPinExports = customAppliedState.exportMarkupIncludesCustomPin && customAppliedState.customPinRasterized;
+  result.pngExportFidelity = customAppliedState.rasterWidth === 2400 && customAppliedState.rasterHeight === 1440 &&
+    customAppliedState.rasterBytes > 20_000;
   result.exportLayerGroups = customAppliedState.exportLayerGroups;
   result.svgLabelExportLayered = customAppliedState.exportMarkupUsesLayeredLabels;
   await new Promise((resolve) => setTimeout(resolve, 420));
@@ -766,9 +949,13 @@ async function runSmoke(window) {
     const autosavedProject = JSON.parse(await fs.readFile(autosaveRecoveryPath(), "utf8"));
     const boundProject = JSON.parse(await fs.readFile(smokeProjectFilePath, "utf8"));
     const autosaveMetadata = JSON.parse(await fs.readFile(autosaveMetadataPath(), "utf8"));
+    const finalViewport = finalProjectBody?.result?.project?.viewport;
     result.jsonAutosave = autosavedProject.schemaVersion === 5 &&
       autosavedProject.locations?.length === currentProject.locations.length &&
       autosavedProject.layers?.length === 2 && autosavedProject.customPins?.length === 1 &&
+      autosavedProject.viewport?.zoom === finalViewport?.zoom &&
+      autosavedProject.viewport?.pan?.x === finalViewport?.pan?.x &&
+      autosavedProject.viewport?.pan?.y === finalViewport?.pan?.y &&
       boundProject.project?.updatedAt === autosavedProject.project?.updatedAt &&
       boundProject.locations?.length === autosavedProject.locations?.length &&
       autosaveMetadata.recoveryPath === autosaveRecoveryPath() &&
@@ -786,15 +973,23 @@ async function runSmoke(window) {
     locationCount: document.querySelector('[data-workspace-mode="locations"] .nav-count')?.textContent,
     layerCount: document.querySelector('[data-workspace-mode="layers"] .nav-count')?.textContent,
     customPinCount: document.querySelectorAll('.custom-pin-symbol').length,
+    companyLabelCount: [...document.querySelectorAll('[data-label-text="true"]')]
+      .filter((label) => label.textContent === 'Smoke Test Company' && label.getAttribute('font-size') === '18.5').length,
     saveStatus: document.querySelector('.save-status')?.textContent,
     pendingProposal: Boolean(document.querySelector('[data-testid="ai-proposal-banner"]')),
+    viewportTransform: document.querySelector('[data-testid="map-viewport-transform"]')?.getAttribute('transform') || null,
   }))()`);
   result.autosaveRestoredOnLaunch = autosaveRestoredState.version === "v0.6.0" &&
     autosaveRestoredState.locationCount === String(currentProject.locations.length) &&
     autosaveRestoredState.layerCount === "2" &&
     autosaveRestoredState.customPinCount === currentProject.locations.length &&
+    autosaveRestoredState.companyLabelCount === 1 &&
     /autosaved|save pending|saving/i.test(autosaveRestoredState.saveStatus || "") &&
     !autosaveRestoredState.pendingProposal;
+  const finalViewport = finalProjectBody?.result?.project?.viewport;
+  result.viewportProjectFidelity = Boolean(finalViewport) && finalViewport.zoom >= 0.4 && finalViewport.zoom <= 4 &&
+    (Math.abs(finalViewport.pan?.x || 0) > 0 || Math.abs(finalViewport.pan?.y || 0) > 0) &&
+    customAppliedState.viewportTransform === autosaveRestoredState.viewportTransform;
   if (capturePath) {
     await window.webContents.executeJavaScript(`document.querySelector('[data-workspace-mode="locations"]')?.click()`);
     await new Promise((resolve) => setTimeout(resolve, 120));
@@ -815,9 +1010,11 @@ async function runSmoke(window) {
     !result.documentOverflowX && !result.documentOverflowY &&
     result.mcpBridge && result.mcpUnauthorizedBlocked && result.mcpLoopback &&
     result.canvasNavigation && result.workspaceModesFunctional && result.layerWorkspaceFunctional && result.pinEditingScope && result.locationVisibility && result.locationRowDelete && result.mcpProposalStaged && result.mcpProposalAppliedByUser &&
+    result.calloutEditing && result.calloutEmbedded && result.mcpCalloutProposalStaged &&
+    result.mcpCalloutProposalApplied && result.mcpCalloutEmbedded &&
     result.customPinProposalStaged && result.customPinEmbedded && result.customPinAppliedToAll &&
-    result.customPinDeleteControl && result.customPinExports && result.pinSizeExportFidelity && result.exportLayerGroups === 2 && result.svgLabelExportLayered &&
-    result.ornlPaletteAvailable && result.jsonAutosave && result.autosaveRestoredOnLaunch;
+    result.customPinDeleteControl && result.customPinExports && result.pinSizeExportFidelity && result.pngExportFidelity && result.exportLayerGroups === 2 && result.svgLabelExportLayered &&
+    result.ornlPaletteAvailable && result.jsonAutosave && result.autosaveRestoredOnLaunch && result.viewportProjectFidelity;
   console.log(`USA_MAP_STUDIO_SMOKE ${JSON.stringify({ passed, ...result })}`);
   app.exit(passed ? 0 : 1);
 }

@@ -34,6 +34,20 @@ test("MCP can stage independent location visibility without deleting the city", 
   assert.equal(result.proposal.proposed.locations.length, current.locations.length);
 });
 
+test("MCP place edits keep default City labels synchronized", () => {
+  const current = createDefaultProject();
+  const result = buildMcpProposal("stage_location_update", {
+    locationId: current.locations[0].id,
+    patch: { city: "Tacoma" },
+    expectedUpdatedAt: current.project.updatedAt,
+    summary: "Correct the city name",
+  }, current);
+  const updated = result.proposal.proposed.locations[0];
+  assert.equal(updated.label, "Tacoma, WA");
+  assert.equal(updated.callout.labels.find((label) => label.role === "city")?.text, "Tacoma, WA");
+  assert.equal(current.locations[0].label, "Seattle, WA");
+});
+
 test("MCP can stage a complete editable multi-row callout", () => {
   const current = createDefaultProject();
   const location = current.locations[0];

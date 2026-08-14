@@ -193,7 +193,12 @@ export function Inspector({
               </select>
             </label>
             <ColorField label="Color" value={effectiveStyle.pinColor} onChange={(pinColor) => updatePinStyle({ pinColor })} />
-            <label><span>Size <em>{effectiveStyle.pinSize}px</em></span><input type="range" min="6" max="40" value={effectiveStyle.pinSize} onChange={(event) => updatePinStyle({ pinSize: Number(event.target.value) })} /></label>
+            <label><span>Size <em>{effectiveStyle.pinSize}px</em></span>
+              <span className="range-with-value">
+                <input type="range" min="6" max="40" value={effectiveStyle.pinSize} onChange={(event) => updatePinStyle({ pinSize: Number(event.target.value) })} />
+                <input type="number" min="6" max="40" step="1" value={effectiveStyle.pinSize} aria-label="Pin size" onChange={(event) => updatePinStyle({ pinSize: Math.min(40, Math.max(6, Number(event.target.value) || 6)) })} />
+              </span>
+            </label>
             <input
               ref={svgInputRef}
               className="sr-only"
@@ -248,7 +253,12 @@ export function Inspector({
                   <option value="auto">Automatic</option><option value="none">None</option><option value="straight">Straight</option><option value="elbow">Elbow</option>
                 </select>
               </label>
-              <label><span>Line width <em>{location.callout.leaderWidth.toFixed(2)}</em></span><input type="range" min="0.25" max="5" step="0.25" value={location.callout.leaderWidth} onChange={(event) => updateCallout({ leaderWidth: Number(event.target.value) })} /></label>
+              <label><span>Line width <em>{location.callout.leaderWidth.toFixed(2)}</em></span>
+                <span className="range-with-value">
+                  <input type="range" min="0.25" max="5" step="0.25" value={location.callout.leaderWidth} onChange={(event) => updateCallout({ leaderWidth: Number(event.target.value) })} />
+                  <input type="number" min="0.25" max="5" step="0.25" value={location.callout.leaderWidth} aria-label="Leader line width" onChange={(event) => updateCallout({ leaderWidth: Math.min(5, Math.max(0.25, Number(event.target.value) || 0.25)) })} />
+                </span>
+              </label>
             </div>
             {location.callout.leaderLine !== "none" ? <ColorField label="Leader color" value={location.callout.leaderColor} onChange={(leaderColor) => updateCallout({ leaderColor })} /> : null}
             <div className="callout-label-list">
@@ -267,18 +277,24 @@ export function Inspector({
                     </span>
                   </header>
                   <label className="toggle-row"><span>Show label row</span><input type="checkbox" checked={label.visible} onChange={(event) => updateLabel(label.id, { visible: event.target.checked })} /></label>
-                  <label><span>Text</span><textarea rows={2} value={label.text} placeholder={label.role === "company" ? "Company name" : label.role === "city" ? "City name" : "Label text"} onChange={(event) => updateLabel(label.id, { text: event.target.value })} /></label>
+                  <label><span>Text</span><input value={label.text} placeholder={label.role === "company" ? "Company name" : label.role === "city" ? "City name" : "Label text"} onChange={(event) => updateLabel(label.id, { text: event.target.value })} /></label>
                   <div className="field-row">
                     <label><span>Font</span><select value={label.fontFamily} onChange={(event) => updateLabel(label.id, { fontFamily: event.target.value })}>{CALLOUT_FONTS.map((font) => <option key={font} value={font}>{font}</option>)}</select></label>
                     <label><span>Weight</span><select value={label.fontWeight} onChange={(event) => updateLabel(label.id, { fontWeight: Number(event.target.value) as LocationLabel["fontWeight"] })}><option value="400">Regular</option><option value="500">Medium</option><option value="600">Semibold</option><option value="700">Bold</option><option value="800">Extra bold</option></select></label>
                   </div>
-                  <label><span>Size <em>{label.fontSize.toFixed(1)} px</em></span><input type="range" min="6" max="32" step="0.5" value={label.fontSize} onChange={(event) => updateLabel(label.id, { fontSize: Number(event.target.value) })} /></label>
+                  <label><span>Size <em>{label.fontSize.toFixed(1)} px</em></span>
+                    <span className="range-with-value">
+                      <input type="range" min="6" max="32" step="0.5" value={label.fontSize} onChange={(event) => updateLabel(label.id, { fontSize: Number(event.target.value) })} />
+                      <input type="number" min="6" max="32" step="0.5" value={label.fontSize} aria-label={`${label.role} label size`} onChange={(event) => updateLabel(label.id, { fontSize: Math.min(32, Math.max(6, Number(event.target.value) || 6)) })} />
+                    </span>
+                  </label>
                   <ColorField label="Text color" value={label.color} onChange={(color) => updateLabel(label.id, { color })} />
                   <button type="button" className="button button--secondary button--full" onClick={() => onApplyLabelStyleToRole(label)}>Apply style to all {label.role} labels</button>
                 </article>
               ))}
               {!location.callout.labels.length ? <p className="form-hint">This callout has no label rows. Add a City, Company, or Custom label.</p> : null}
             </div>
+            <p className="form-hint">Each visible row exports as its own editable text object. Add another row instead of inserting a line break.</p>
             <label><span>Notes</span><textarea rows={3} value={location.notes} onChange={(event) => onUpdateLocation({ notes: event.target.value })} /></label>
           </section>
           <div className="inspector__actions">

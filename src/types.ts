@@ -95,6 +95,14 @@ export interface MapSettings {
   stateColors: Record<string, string>;
 }
 
+export interface MapViewport {
+  zoom: number;
+  pan: {
+    x: number;
+    y: number;
+  };
+}
+
 export interface UsaMapProject {
   schema: typeof PROJECT_SCHEMA;
   schemaVersion: typeof PROJECT_SCHEMA_VERSION;
@@ -105,6 +113,7 @@ export interface UsaMapProject {
     updatedAt: string;
   };
   map: MapSettings;
+  viewport: MapViewport;
   layers: MapLayer[];
   sharedPinStyle: SharedPinStyle;
   customPins: CustomPinDesign[];

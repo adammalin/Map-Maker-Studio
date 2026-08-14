@@ -16,6 +16,7 @@ import {
   type LocationLabelWeight,
   type MapLayer,
   type MapLocation,
+  type MapViewport,
   type PinType,
   type SharedPinStyle,
   type UsaMapProject,
@@ -41,6 +42,34 @@ export function fileSafeName(value: string): string {
 
 export function isHexColor(value: unknown): value is string {
   return typeof value === "string" && HEX_COLOR.test(value);
+}
+
+/**
+ * Merge an editor or MCP patch while keeping default place names in sync.
+ * Explicitly customized display labels remain untouched.
+ */
+export function mergeLocationPatch(existing: MapLocation, patch: Partial<MapLocation>): MapLocation {
+  const placeChanged = patch.city !== undefined || patch.state !== undefined;
+  const next: MapLocation = { ...existing, ...patch, id: existing.id };
+  if (!placeChanged) return next;
+
+  const previousCanonical = `${existing.city}, ${existing.state}`;
+  const nextCanonical = `${next.city}, ${next.state}`;
+  if (patch.label === undefined && existing.label.trim() === previousCanonical) {
+    next.label = nextCanonical;
+  }
+  if (patch.callout !== undefined) return next;
+
+  next.callout = {
+    ...existing.callout,
+    labels: existing.callout.labels.map((label) => {
+      if (label.role !== "city") return label;
+      if (label.text.trim() === existing.label.trim()) return { ...label, text: next.label };
+      if (label.text.trim() === previousCanonical) return { ...label, text: nextCanonical };
+      return label;
+    }),
+  };
+  return next;
 }
 
 function numberWithin(value: unknown, fallback: number, min: number, max: number): number {
@@ -167,7 +196,7 @@ function normalizeLocation(
   if (!layerId || !layerIds.has(layerId)) {
     throw new Error(`Location ${index + 1} references a layer that is not embedded in this project.`);
   }
-  const label = stringValue(input.label, `${city}, ${state}`);
+  const label = stringValue(input.label, `${city}, ${state}`).replace(/\s+/g, " ").trim() || `${city}, ${state}`;
   const showLabel = typeof input.showLabel === "boolean" ? input.showLabel : true;
   const labelColor = colorValue(input.labelColor, "#373a36");
   const labelPosition = LABEL_POSITIONS.has(input.labelPosition as LabelPosition)
@@ -215,6 +244,19 @@ function normalizeSharedPinStyle(
     customPinId,
     pinColor: colorValue(input.pinColor, fallback.pinColor),
     pinSize: numberWithin(input.pinSize, fallback.pinSize, 6, 40),
+  };
+}
+
+function normalizeViewport(value: unknown): MapViewport {
+  if (!value || typeof value !== "object") return { zoom: 1, pan: { x: 0, y: 0 } };
+  const input = value as Partial<MapViewport>;
+  const pan = input.pan && typeof input.pan === "object" ? input.pan : { x: 0, y: 0 };
+  return {
+    zoom: numberWithin(input.zoom, 1, 0.4, 4),
+    pan: {
+      x: numberWithin(pan.x, 0, -10_000, 10_000),
+      y: numberWithin(pan.y, 0, -10_000, 10_000),
+    },
   };
 }
 
@@ -292,6 +334,7 @@ export function parseProjectText(text: string): UsaMapProject {
         Object.entries(input.map.stateColors ?? {}).filter(([, color]) => isHexColor(color)),
       ),
     },
+    viewport: normalizeViewport(input.viewport),
     layers,
     sharedPinStyle: normalizeSharedPinStyle(
       sourceSchemaVersion >= 3 ? input.sharedPinStyle : undefined,

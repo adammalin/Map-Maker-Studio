@@ -10,6 +10,7 @@ USA Map Studio project files are UTF-8 JSON documents normally saved with the `.
   "schemaVersion": 5,
   "project": {},
   "map": {},
+  "viewport": {},
   "layers": [],
   "sharedPinStyle": {},
   "customPins": [],
@@ -35,6 +36,15 @@ USA Map Studio project files are UTF-8 JSON documents normally saved with the `.
 - `stateColors`, keyed by two-character state FIPS code for individual state overrides
 
 Colors are stored as six-digit hex values.
+
+## Export viewport
+
+`viewport` stores the exact canvas framing used by the editor and every export:
+
+- `zoom`, from `0.4` through `4`
+- `pan.x` and `pan.y`, in 1200 x 720 export-canvas coordinates
+
+Space-drag panning, the navigator minimap, wheel zoom, and the zoom controls update these values. They are autosaved with the rest of the project, restored on open or relaunch, and passed unchanged to SVG, PNG, and editable PowerPoint export. Viewport navigation does not create content Undo steps, so undoing a label or pin edit keeps the current framing.
 
 ## Layers
 
@@ -144,4 +154,4 @@ Atomic replacement writes a private temporary file beside the destination and re
 
 ## Compatibility
 
-Version 0.6.0 writes schema version 5 and reads schema versions 1 through 4. Canvas zoom and pan are editor-view state rather than project data, so they do not alter rendered coordinates or the portable JSON schema; rendered exports still reproduce the active viewport. Version 1 and 2 projects migrate with one visible `Layer 1 - Locations`; every existing location is assigned to it. Version 1 also receives an empty `customPins` library and `null` custom-pin references. Locations from schema versions 1 through 3 default to `visible: true` when that field is absent. A version 4 location's single label becomes its first City callout row, preserving label text, visibility, color, and right/left/above/below placement. The app rejects unrelated JSON, unsupported schema versions, missing core objects, invalid coordinates, duplicate layer, custom-pin, or per-location label IDs, excessive label rows, dangling layer or custom-pin references, and malformed required fields instead of silently dropping data.
+Version 0.6.0 writes schema version 5 and reads schema versions 1 through 4. Project files without `viewport` open at 100% with centered pan, which preserves compatibility with earlier version 5 drafts as well as older schemas. Version 1 and 2 projects migrate with one visible `Layer 1 - Locations`; every existing location is assigned to it. Version 1 also receives an empty `customPins` library and `null` custom-pin references. Locations from schema versions 1 through 3 default to `visible: true` when that field is absent. A version 4 location's single label becomes its first City callout row, preserving label text, visibility, color, and right/left/above/below placement. The app rejects unrelated JSON, unsupported schema versions, missing core objects, invalid coordinates, duplicate layer, custom-pin, or per-location label IDs, excessive label rows, dangling layer or custom-pin references, and malformed required fields instead of silently dropping data.

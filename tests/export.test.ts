@@ -34,6 +34,13 @@ test("PowerPoint export uses separate editable objects instead of a full-slide i
   assert.match(slideXml, /name="\[Layer 1: Layer 1 - Locations\] Company label - Northwest Fabrication"/);
   assert.match(slideXml, /name="\[Layer 1: Layer 1 - Locations\] Leader line 1 - Seattle, WA"/);
   assert.match(slideXml, /typeface="Arial"/);
+  const companyShape = (slideXml.match(/<p:sp>.*?<\/p:sp>/gs) ?? [])
+    .find((shape) => shape.includes('name="[Layer 1: Layer 1 - Locations] Company label - Northwest Fabrication"'));
+  assert.ok(companyShape);
+  const companyRunProperties = companyShape.match(/<a:rPr.*?<\/a:rPr>/s)?.[0] ?? "";
+  assert.match(companyRunProperties, /sz="675"/, "9 px on the canvas should export as an editable 6.75 pt text run");
+  assert.match(companyRunProperties, /b="1"/);
+  assert.doesNotMatch(companyRunProperties, /<a:ln\b/, "location text should not receive a PowerPoint text outline");
   assert.match(slideXml, /name="State label - TN"/);
   assert.match(slideXml, /FE5000/i);
   assert.equal(Object.values(archive.files).filter((entry) => entry.name.startsWith("ppt/media/") && !entry.dir).length, 0);

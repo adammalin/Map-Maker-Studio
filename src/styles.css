@@ -1419,6 +1419,21 @@ input.sr-only[type="file"] {
   accent-color: var(--green);
 }
 
+.range-with-value {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 60px;
+  align-items: center;
+  gap: 8px;
+}
+
+.form-section .range-with-value input[type="number"] {
+  width: 60px;
+  height: 30px;
+  padding: 5px 6px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 .toggle-row {
   display: flex !important;
   min-height: 34px;

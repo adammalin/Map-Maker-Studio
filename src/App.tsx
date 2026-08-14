@@ -32,7 +32,7 @@ import {
 import { createBlankProject, createDefaultProject, createLocation, createMapLayer } from "./data/default-project";
 import { parseLocationsCsv, CSV_TEMPLATE } from "./lib/csv";
 import { downloadBlob, prepareSvgMarkup, projectToPowerPoint, svgToPng } from "./lib/export";
-import { fileSafeName, parseProjectText, serializeProject } from "./lib/project";
+import { fileSafeName, mergeLocationPatch, parseProjectText, serializeProject } from "./lib/project";
 import { buildMcpProposal, validateProjectCandidate } from "./lib/mcp-proposals";
 import { createCustomPinDesign } from "./lib/custom-pin";
 import { arrangeProjectCallouts, findCalloutOverlaps } from "./lib/callouts";
@@ -43,7 +43,7 @@ import {
   materializeEffectivePinStyles,
   setPinEditingScope as applyPinEditingScope,
 } from "./lib/layers";
-import type { AiMapProposal, ImportResult, LocationLabel, MapLayer, MapLocation, MapSettings, SharedPinStyle, UsaMapProject } from "./types";
+import type { AiMapProposal, ImportResult, LocationLabel, MapLayer, MapLocation, MapSettings, MapViewport, SharedPinStyle, UsaMapProject } from "./types";
 import { MapCanvas } from "./components/MapCanvas";
 import { MapMiniMap } from "./components/MapMiniMap";
 import { KeyboardShortcutsDialog } from "./components/KeyboardShortcutsDialog";
@@ -91,8 +91,6 @@ export function App() {
   const [pendingImport, setPendingImport] = useState<PendingImport | null>(null);
   const [pendingAiProposal, setPendingAiProposal] = useState<AiMapProposal | null>(null);
   const [aiProposalOpen, setAiProposalOpen] = useState(false);
-  const [zoom, setZoom] = useState(1);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
   const [spacePressed, setSpacePressed] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [exporting, setExporting] = useState<ExportKind | null>(null);
@@ -104,6 +102,7 @@ export function App() {
   const noticeTimer = useRef<number | null>(null);
   const autosaveSequence = useRef(0);
   const project = history.present;
+  const { zoom, pan } = project.viewport;
   const workspaceCopy = WORKSPACE_MODE_COPY[activeSidebar];
   const calloutOverlaps = useMemo(() => findCalloutOverlaps(project), [project]);
   const overlapLocationIds = useMemo(() => new Set(calloutOverlaps.flatMap((overlap) => [overlap.firstLocationId, overlap.secondLocationId])), [calloutOverlaps]);
@@ -135,13 +134,33 @@ export function App() {
     setAutosaveStatus("pending");
   }, []);
 
+  const updateViewport = useCallback((patch: Partial<MapViewport>) => {
+    setHistory((current) => {
+      const viewport: MapViewport = {
+        zoom: Math.min(4, Math.max(0.4, patch.zoom ?? current.present.viewport.zoom)),
+        pan: {
+          x: Math.min(10_000, Math.max(-10_000, patch.pan?.x ?? current.present.viewport.pan.x)),
+          y: Math.min(10_000, Math.max(-10_000, patch.pan?.y ?? current.present.viewport.pan.y)),
+        },
+      };
+      const withViewport = (snapshot: UsaMapProject): UsaMapProject => ({ ...snapshot, viewport });
+      const present = withViewport(current.present);
+      present.project = { ...present.project, updatedAt: new Date().toISOString() };
+      return {
+        past: current.past.map(withViewport),
+        present,
+        future: current.future.map(withViewport),
+      };
+    });
+    setDirty(true);
+    setAutosaveStatus("pending");
+  }, []);
+
   function replaceProject(next: UsaMapProject, saved = false) {
     setHistory({ past: [], present: next, future: [] });
     setSelectedLocationId(next.locations[0]?.id ?? null);
     setSelectedLayerId(next.layers[0].id);
     setSelectedStateFips(null);
-    setZoom(1);
-    setPan({ x: 0, y: 0 });
     setDirty(!saved);
     setAutosaveStatus(saved ? "saved" : "pending");
   }
@@ -171,7 +190,7 @@ export function App() {
   function updateLocation(id: string, patch: Partial<MapLocation>) {
     commitProject((current) => ({
       ...current,
-      locations: current.locations.map((location) => location.id === id ? { ...location, ...patch } : location),
+      locations: current.locations.map((location) => location.id === id ? mergeLocationPatch(location, patch) : location),
     }));
   }
 
@@ -504,8 +523,7 @@ export function App() {
 
   function zoomTo(requestedZoom: number) {
     const next = zoomViewportAt({ zoom, pan }, requestedZoom);
-    setZoom(next.zoom);
-    setPan(next.pan);
+    updateViewport(next);
   }
 
   function zoomByStep(direction: -1 | 1) {
@@ -513,8 +531,7 @@ export function App() {
   }
 
   function fitMapView() {
-    setZoom(1);
-    setPan({ x: 0, y: 0 });
+    updateViewport({ zoom: 1, pan: { x: 0, y: 0 } });
   }
 
   async function newProject() {
@@ -935,10 +952,10 @@ export function App() {
                 }}
                 onMoveLocation={(id, latitude, longitude) => updateLocation(id, { latitude: Number(latitude.toFixed(6)), longitude: Number(longitude.toFixed(6)) })}
                 onMoveCallout={moveCallout}
-                onPanChange={setPan}
-                onZoomChange={setZoom}
+                onPanChange={(nextPan) => updateViewport({ pan: nextPan })}
+                onZoomChange={(nextZoom) => updateViewport({ zoom: nextZoom })}
               />
-              <MapMiniMap project={project} zoom={zoom} pan={pan} onPanChange={setPan} />
+              <MapMiniMap project={project} zoom={zoom} pan={pan} onPanChange={(nextPan) => updateViewport({ pan: nextPan })} />
               {calloutOverlaps.length ? <div className="map-stage__overlap-warning"><WarningDiamond size={15} weight="fill" /> {calloutOverlaps.length} label layout issue{calloutOverlaps.length === 1 ? "" : "s"}</div> : null}
               <div className="map-stage__footer"><span>1200 × 720 export canvas</span><span>Albers USA projection</span><span>Space + drag to pan · drag pins or callouts to refine</span></div>
             </div>

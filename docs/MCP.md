@@ -14,7 +14,7 @@ The MCP server lets a local AI client inspect the project currently open in USA 
 - Removing locations and replacing a project are flagged as destructive to MCP clients, even though they still stop at human review.
 - Removing a layer is also flagged as destructive because its assigned locations are included in the proposal removal.
 - `stage_custom_pin_import` sanitizes and embeds the submitted SVG before the proposal is shown. It can optionally assign the new design to one existing location or all locations, but still cannot apply or save the result. Safe Illustrator class-based gradient and stroke styles are converted to portable SVG presentation attributes.
-- Location read results include the complete schema-version-5 callout: ordered City, Company, and custom rows; independent typography; stored offsets; lock state; and leader-line settings. `stage_location_update` can stage a complete replacement `callout` object after reading the current location.
+- Complete-project reads include the saved zoom/pan export viewport. Location read results include the complete schema-version-5 callout: ordered City, Company, and custom rows; independent typography; stored offsets; lock state; and leader-line settings. `stage_location_update` can stage a complete replacement `callout` object after reading the current location.
 
 When a read tool returns project or CSV-derived content, that returned content becomes part of the AI conversation. Do not use an AI client with material that is not approved for that client.
 

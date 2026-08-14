@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createDefaultProject } from "../src/data/default-project";
 import { createCustomPinDesign } from "../src/lib/custom-pin";
-import { parseProjectText, serializeProject } from "../src/lib/project";
+import { mergeLocationPatch, parseProjectText, serializeProject } from "../src/lib/project";
 import { PROJECT_SCHEMA, PROJECT_SCHEMA_VERSION } from "../src/types";
 import { createLocationLabel } from "../src/lib/callouts";
 
@@ -19,6 +19,7 @@ test("project JSON round-trips all map and location fields", () => {
   }));
   source.locations[0].callout.offsetX = 91;
   source.locations[0].callout.leaderLine = "elbow";
+  source.viewport = { zoom: 1.44, pan: { x: 83.25, y: -47.5 } };
   const restored = parseProjectText(serializeProject(source));
   assert.equal(restored.schema, PROJECT_SCHEMA);
   assert.equal(restored.schemaVersion, PROJECT_SCHEMA_VERSION);
@@ -32,8 +33,33 @@ test("project JSON round-trips all map and location fields", () => {
   assert.equal(restored.locations[0].callout.labels[1].fontSize, 14);
   assert.equal(restored.locations[0].callout.offsetX, 91);
   assert.equal(restored.locations[0].callout.leaderLine, "elbow");
+  assert.deepEqual(restored.viewport, { zoom: 1.44, pan: { x: 83.25, y: -47.5 } });
   assert.equal(restored.layers[0].id, source.layers[0].id);
   assert.equal(restored.locations[0].layerId, source.layers[0].id);
+});
+
+test("default City callouts follow place edits without overwriting custom display labels", () => {
+  const project = createDefaultProject();
+  const defaultLocation = project.locations[0];
+  const renamed = mergeLocationPatch(defaultLocation, { city: "Tacoma" });
+  assert.equal(renamed.label, "Tacoma, WA");
+  assert.equal(renamed.callout.labels.find((label) => label.role === "city")?.text, "Tacoma, WA");
+
+  const customized = structuredClone(defaultLocation);
+  customized.label = "Northwest site";
+  customized.callout.labels[0].text = "Northwest manufacturing site";
+  const moved = mergeLocationPatch(customized, { city: "Tacoma" });
+  assert.equal(moved.label, "Northwest site");
+  assert.equal(moved.callout.labels[0].text, "Northwest manufacturing site");
+});
+
+test("label rows normalize line breaks so SVG and PowerPoint use the same single-line text", () => {
+  const project = createDefaultProject();
+  project.locations[0].label = "Seattle\nsite";
+  project.locations[0].callout.labels[0].text = "Seattle\nWashington";
+  const restored = parseProjectText(JSON.stringify(project));
+  assert.equal(restored.locations[0].label, "Seattle site");
+  assert.equal(restored.locations[0].callout.labels[0].text, "Seattle Washington");
 });
 
 test("project JSON stores each location with the effective shared pin size", () => {
@@ -50,6 +76,16 @@ test("project JSON stores each location with the effective shared pin size", () 
 
 test("project parser rejects unrelated JSON", () => {
   assert.throws(() => parseProjectText('{"name":"not a project"}'), /not a USA Map Studio project/i);
+});
+
+test("project parser defaults old viewports and bounds malformed viewport values", () => {
+  const legacy = createDefaultProject() as unknown as Record<string, unknown>;
+  delete legacy.viewport;
+  assert.deepEqual(parseProjectText(JSON.stringify(legacy)).viewport, { zoom: 1, pan: { x: 0, y: 0 } });
+
+  const malformed = createDefaultProject() as unknown as Record<string, unknown>;
+  malformed.viewport = { zoom: 99, pan: { x: -99_999, y: "not-a-number" } };
+  assert.deepEqual(parseProjectText(JSON.stringify(malformed)).viewport, { zoom: 4, pan: { x: -10_000, y: 0 } });
 });
 
 test("project parser rejects invalid coordinates", () => {

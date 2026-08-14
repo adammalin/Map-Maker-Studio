@@ -68,7 +68,7 @@ export function createLocationLabel(
   return {
     id: partial.id ?? createId("label"),
     role,
-    text,
+    text: text.replace(/\s+/g, " ").trim(),
     visible: partial.visible ?? true,
     fontFamily: partial.fontFamily ?? "Aptos",
     fontSize: partial.fontSize ?? (company ? 9.5 : 11.5),
