@@ -21,6 +21,9 @@ let mcpAddress = null;
 const pendingMcpCommands = new Map();
 let activeProjectFilePath = null;
 let projectAutosaveQueue = Promise.resolve();
+let lastAutomaticSnapshotAt = 0;
+const PROJECT_SNAPSHOT_LIMIT = 24;
+const AUTOMATIC_SNAPSHOT_INTERVAL_MS = 5 * 60 * 1000;
 
 function mcpRuntimePath() {
   return path.join(app.getPath("userData"), MCP_RUNTIME_FILE_NAME);
@@ -36,6 +39,10 @@ function autosaveRecoveryPath() {
 
 function autosaveMetadataPath() {
   return path.join(autosaveDirectory(), "current-project.meta.json");
+}
+
+function projectSnapshotDirectory() {
+  return path.join(autosaveDirectory(), "history");
 }
 
 function isProjectFilePath(value) {
@@ -58,6 +65,57 @@ function validateAutosaveText(value) {
     throw new Error("Autosave received an unrelated JSON document.");
   }
   return text;
+}
+
+async function readSnapshotRecord(filePath) {
+  const record = JSON.parse(await fs.readFile(filePath, "utf8"));
+  const text = validateAutosaveText(record?.text);
+  return {
+    id: String(record.id),
+    label: String(record.label || "Recovery point"),
+    createdAt: String(record.createdAt),
+    projectName: String(record.projectName || "Untitled map"),
+    locationCount: Number(record.locationCount || 0),
+    layerCount: Number(record.layerCount || 0),
+    filePath,
+    text,
+  };
+}
+
+async function listProjectSnapshots() {
+  const directory = projectSnapshotDirectory();
+  const names = await fs.readdir(directory).catch(() => []);
+  const records = await Promise.all(names
+    .filter((name) => name.endsWith(".snapshot.json"))
+    .map((name) => readSnapshotRecord(path.join(directory, name)).catch(() => null)));
+  return records
+    .filter(Boolean)
+    .sort((first, second) => second.createdAt.localeCompare(first.createdAt));
+}
+
+async function pruneProjectSnapshots() {
+  const snapshots = await listProjectSnapshots();
+  await Promise.all(snapshots.slice(PROJECT_SNAPSHOT_LIMIT).map((snapshot) => fs.unlink(snapshot.filePath).catch(() => undefined)));
+}
+
+async function createProjectSnapshot(textValue, labelValue) {
+  const text = validateAutosaveText(textValue);
+  const project = JSON.parse(text);
+  const createdAt = new Date().toISOString();
+  const id = `${Date.now()}-${randomUUID()}`;
+  const filePath = path.join(projectSnapshotDirectory(), `${id}.snapshot.json`);
+  const record = {
+    id,
+    label: String(labelValue || "Recovery point").replace(/\s+/g, " ").trim().slice(0, 120) || "Recovery point",
+    createdAt,
+    projectName: String(project.project?.name || "Untitled map").slice(0, 240),
+    locationCount: Array.isArray(project.locations) ? project.locations.length : 0,
+    layerCount: Array.isArray(project.layers) ? project.layers.length : 0,
+    text,
+  };
+  await atomicWriteText(filePath, `${JSON.stringify(record)}\n`);
+  await pruneProjectSnapshots();
+  return { ...record, filePath, text: undefined };
 }
 
 function tokenMatches(value) {
@@ -253,9 +311,30 @@ function registerIpc() {
     }
   });
 
+  ipcMain.handle("project:list-snapshots", async () => (await listProjectSnapshots()).map(({ text: _text, ...snapshot }) => snapshot));
+
+  ipcMain.handle("project:create-snapshot", async (_event, payload) =>
+    createProjectSnapshot(payload?.text, payload?.label));
+
+  ipcMain.handle("project:read-snapshot", async (_event, idValue) => {
+    const id = String(idValue ?? "");
+    if (!/^\d+-[0-9a-f-]{36}$/i.test(id)) throw new Error("The recovery snapshot ID is invalid.");
+    const filePath = path.join(projectSnapshotDirectory(), `${id}.snapshot.json`);
+    const snapshot = await readSnapshotRecord(filePath);
+    const { text, ...metadata } = snapshot;
+    return { text, snapshot: metadata };
+  });
+
   ipcMain.handle("project:autosave", async (_event, payload) => {
     const text = validateAutosaveText(payload?.text);
     const task = async () => {
+      if (Date.now() - lastAutomaticSnapshotAt >= AUTOMATIC_SNAPSHOT_INTERVAL_MS) {
+        const previous = await fs.readFile(autosaveRecoveryPath(), "utf8").catch(() => null);
+        if (previous && previous !== text) {
+          await createProjectSnapshot(previous, "Automatic recovery point");
+          lastAutomaticSnapshotAt = Date.now();
+        }
+      }
       await atomicWriteText(autosaveRecoveryPath(), text);
       if (activeProjectFilePath) await atomicWriteText(activeProjectFilePath, text);
       await atomicWriteText(autosaveMetadataPath(), `${JSON.stringify({
@@ -419,6 +498,23 @@ async function runSmoke(window) {
     rows: document.querySelectorAll('.location-row').length,
     overflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth,
   }))()`);
+  await window.webContents.executeJavaScript(`(() => {
+    const button = [...document.querySelectorAll('.location-panel__actions button')]
+      .find((candidate) => candidate.textContent?.includes('Bulk edit'));
+    button?.click();
+  })()`);
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const bulkEditorState = await window.webContents.executeJavaScript(`(() => ({
+    dialog: Boolean(document.querySelector('[data-testid="location-data-table-dialog"]')),
+    rows: document.querySelectorAll('.location-data-table__row').length,
+    companyInputs: document.querySelectorAll('.location-data-table__row input[placeholder="Company name"]').length,
+    bulkActions: [...document.querySelectorAll('.location-data-toolbar button')].some((button) => button.textContent?.includes('Show labels')),
+  }))()`);
+  await window.webContents.executeJavaScript(`document.querySelector('[aria-label="Close location data table"]')?.click()`);
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  result.bulkLocationEditor = bulkEditorState.dialog && bulkEditorState.rows === locationsMode.rows &&
+    bulkEditorState.companyInputs === locationsMode.rows && bulkEditorState.bulkActions &&
+    !await window.webContents.executeJavaScript(`Boolean(document.querySelector('[data-testid="location-data-table-dialog"]'))`);
   const pinScopeInitial = await window.webContents.executeJavaScript(`(() => ({
     allPressed: document.querySelector('[data-testid="pin-scope-all"]')?.getAttribute('aria-pressed'),
     singlePressed: document.querySelector('[data-testid="pin-scope-single"]')?.getAttribute('aria-pressed'),
@@ -566,12 +662,48 @@ async function runSmoke(window) {
     locationsMode.view === "locations" && locationsMode.heading === "Location workspace" && locationsMode.panel && !locationsMode.overflowX &&
     styleMode.view === "style" && styleMode.heading === "Map style" && !styleMode.locationPanel && styleMode.mapInspector && !styleMode.overflowX &&
     mapMode.view === "map" && mapMode.heading === "Map editor" && !mapMode.locationPanel && mapMode.locationInspector && !mapMode.overflowX;
+  await window.webContents.executeJavaScript(`document.querySelector('[data-workspace-mode="export"]')?.click()`);
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  await window.webContents.executeJavaScript(`document.querySelector('.export-option')?.click()`);
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const preflightState = await window.webContents.executeJavaScript(`(() => ({
+    dialog: Boolean(document.querySelector('[data-testid="export-preflight-dialog"]')),
+    checks: document.querySelectorAll('.preflight-check').length,
+    editable: [...document.querySelectorAll('.preflight-check strong')].some((entry) => /Editable PowerPoint/.test(entry.textContent || '')),
+  }))()`);
+  await window.webContents.executeJavaScript(`document.querySelector('[aria-label="Close export preflight"]')?.click()`);
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  result.exportPreflight = preflightState.dialog && preflightState.checks >= 9 && preflightState.editable;
+  await window.webContents.executeJavaScript(`(() => {
+    const button = [...document.querySelectorAll('.sidebar__section button')]
+      .find((candidate) => candidate.textContent?.includes('Version history'));
+    button?.click();
+  })()`);
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  const historyOpened = await window.webContents.executeJavaScript(`Boolean(document.querySelector('[data-testid="version-history-dialog"]'))`);
+  await window.webContents.executeJavaScript(`document.querySelector('.version-history-create')?.click()`);
+  await new Promise((resolve) => setTimeout(resolve, 180));
+  const historyCreated = await window.webContents.executeJavaScript(`document.querySelectorAll('.version-history-row').length`);
+  await window.webContents.executeJavaScript(`document.querySelector('[aria-label="Close version history"]')?.click()`);
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  result.versionHistory = historyOpened && historyCreated >= 1;
   await window.webContents.executeJavaScript(`document.querySelector('[data-workspace-mode="locations"]')?.click()`);
   await new Promise((resolve) => setTimeout(resolve, 80));
   await window.webContents.executeJavaScript(`document.querySelector('.location-row__select')?.click()`);
   await new Promise((resolve) => setTimeout(resolve, 80));
   await window.webContents.executeJavaScript(`document.querySelector('[data-workspace-mode="map"]')?.click()`);
   await new Promise((resolve) => setTimeout(resolve, 80));
+  const labelModesFunctional = await window.webContents.executeJavaScript(`(() => {
+    const select = document.querySelector('[data-testid="label-view-select"]');
+    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;
+    if (!select || !setter || select.options.length !== 5) return false;
+    setter.call(select, 'city-company');
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  })()`);
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  result.labelDisplayModes = labelModesFunctional &&
+    await window.webContents.executeJavaScript(`document.querySelector('[data-testid="label-view-select"]')?.value === 'city-company'`);
   await window.webContents.executeJavaScript(`document.querySelector('.callout-editor .mini-action')?.click()`);
   await new Promise((resolve) => setTimeout(resolve, 80));
   const calloutControlsEdited = await window.webContents.executeJavaScript(`(() => {
@@ -921,7 +1053,7 @@ async function runSmoke(window) {
     mcpCompanyLabel?.fontSize === 12.5 && mcpCompanyLabel?.fontWeight === 600 &&
     mcpCalloutLocation?.callout?.leaderLine === "straight" && mcpCalloutLocation?.callout?.leaderWidth === 1.75;
   result.customPinEmbedded = customAppliedState.proposalGone && customAppliedState.customPin &&
-    finalProjectBody?.result?.project?.schemaVersion === 5 &&
+    finalProjectBody?.result?.project?.schemaVersion === 6 &&
     finalProjectBody?.result?.project?.layers?.length === 2 &&
     finalProjectBody?.result?.project?.sharedPinStyle?.enabled === true &&
     finalProjectBody?.result?.project?.sharedPinStyle?.customPinId === embeddedDesign?.id &&
@@ -951,7 +1083,7 @@ async function runSmoke(window) {
     const boundProject = JSON.parse(await fs.readFile(smokeProjectFilePath, "utf8"));
     const autosaveMetadata = JSON.parse(await fs.readFile(autosaveMetadataPath(), "utf8"));
     const finalViewport = finalProjectBody?.result?.project?.viewport;
-    result.jsonAutosave = autosavedProject.schemaVersion === 5 &&
+    result.jsonAutosave = autosavedProject.schemaVersion === 6 &&
       autosavedProject.locations?.length === currentProject.locations.length &&
       autosavedProject.layers?.length === 2 && autosavedProject.customPins?.length === 1 &&
       autosavedProject.viewport?.zoom === finalViewport?.zoom &&
@@ -980,7 +1112,7 @@ async function runSmoke(window) {
     pendingProposal: Boolean(document.querySelector('[data-testid="ai-proposal-banner"]')),
     viewportTransform: document.querySelector('[data-testid="map-viewport-transform"]')?.getAttribute('transform') || null,
   }))()`);
-  result.autosaveRestoredOnLaunch = autosaveRestoredState.version === "v0.6.0" &&
+  result.autosaveRestoredOnLaunch = autosaveRestoredState.version === "v0.7.0" &&
     autosaveRestoredState.locationCount === String(currentProject.locations.length) &&
     autosaveRestoredState.layerCount === "2" &&
     autosaveRestoredState.customPinCount === currentProject.locations.length &&
@@ -1010,7 +1142,7 @@ async function runSmoke(window) {
     result.width > 400 && result.height > 240 &&
     !result.documentOverflowX && !result.documentOverflowY &&
     result.mcpBridge && result.mcpUnauthorizedBlocked && result.mcpLoopback &&
-    result.canvasNavigation && result.workspaceModesFunctional && result.layerWorkspaceFunctional && result.pinEditingScope && result.locationVisibility && result.locationRowDelete && result.mcpProposalStaged && result.mcpProposalAppliedByUser &&
+    result.canvasNavigation && result.workspaceModesFunctional && result.layerWorkspaceFunctional && result.bulkLocationEditor && result.exportPreflight && result.versionHistory && result.labelDisplayModes && result.pinEditingScope && result.locationVisibility && result.locationRowDelete && result.mcpProposalStaged && result.mcpProposalAppliedByUser &&
     result.calloutEditing && result.calloutEmbedded && result.mcpCalloutProposalStaged &&
     result.mcpCalloutProposalApplied && result.mcpCalloutEmbedded &&
     result.customPinProposalStaged && result.customPinEmbedded && result.customPinAppliedToAll &&

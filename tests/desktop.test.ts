@@ -18,6 +18,10 @@ test("Electron renderer keeps Node integration disabled", () => {
   assert.match(main, /async function atomicWriteText/);
   assert.match(main, /project:autosave/);
   assert.match(main, /project:reset-autosave-target/);
+  assert.match(main, /project:list-snapshots/);
+  assert.match(main, /project:create-snapshot/);
+  assert.match(main, /project:read-snapshot/);
+  assert.match(main, /PROJECT_SNAPSHOT_LIMIT = 24/);
   assert.match(main, /usa-map-studio-isolated-/);
 });
 
@@ -41,11 +45,12 @@ test("source setup scripts build and smoke-test without creating installers", ()
   assert.match(guideSource, /Mac relaunch/);
   assert.match(guideSource, /Windows relaunch/);
   assert.match(guideSource, /multi-row label callouts/i);
-  assert.match(guideSource, /zoom and pan autosave/i);
+  assert.match(guideSource, /Hold Space and drag anywhere to pan/i);
+  assert.match(guideSource, /automatic recovery points/i);
   assert.match(guideSource, /Arrange labels/);
   assert.match(guideSource, /https:\/\/github\.com\/adammalin\/Map-Maker-Studio/);
   assert.match(readme, /\$HOME\/Map-Maker-Studio\/Start-USA-Map-Studio\.command/);
   assert.match(readme, /\$env:USERPROFILE\\Map-Maker-Studio\\Start-USA-Map-Studio\.cmd/);
-  assert.match(readme, /schema version 5/i);
+  assert.match(readme, /schema version 6/i);
   assert.doesNotMatch(`${mac}\n${windows}`, /maker-squirrel|maker-dmg|create-installer/i);
 });

@@ -14,6 +14,9 @@ contextBridge.exposeInMainWorld("usaMapDesktop", {
   getMcpStatus: () => ipcRenderer.invoke("mcp:get-status"),
   getAutosaveProject: () => ipcRenderer.invoke("project:get-autosave"),
   autosaveProject: (payload) => ipcRenderer.invoke("project:autosave", payload),
+  listProjectSnapshots: () => ipcRenderer.invoke("project:list-snapshots"),
+  createProjectSnapshot: (payload) => ipcRenderer.invoke("project:create-snapshot", payload),
+  readProjectSnapshot: (id) => ipcRenderer.invoke("project:read-snapshot", id),
   resetAutosaveTarget: () => ipcRenderer.invoke("project:reset-autosave-target"),
   onMcpCommand: (handler) => {
     const listener = (_event, request) => {

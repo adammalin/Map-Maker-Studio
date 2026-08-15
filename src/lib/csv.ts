@@ -23,13 +23,20 @@ const aliases = {
   notes: ["notes", "note", "description"],
 } as const;
 
+export const CSV_IMPORT_FIELDS = ["city", "state", "company", "latitude", "longitude", "label", "notes"] as const;
+export type CsvImportField = typeof CSV_IMPORT_FIELDS[number];
+export type CsvColumnMap = Partial<Record<CsvImportField, string>>;
+
 const knownHeaders: Set<string> = new Set(Object.values(aliases).flat());
 
 function normalizeHeader(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 
-function valueFor(row: Record<string, unknown>, names: readonly string[]): string {
+function valueFor(row: Record<string, unknown>, names: readonly string[], mappedHeader?: string): string {
+  if (mappedHeader && row[mappedHeader] !== undefined && row[mappedHeader] !== null) {
+    return String(row[mappedHeader]).trim();
+  }
   for (const [key, value] of Object.entries(row)) {
     if (names.includes(normalizeHeader(key)) && value !== undefined && value !== null) {
       return String(value).trim();
@@ -58,18 +65,37 @@ function parseLabelPosition(value: string): LabelPosition {
     : "right";
 }
 
-function customDataFor(row: Record<string, unknown>): MapLocation["customData"] {
+function customDataFor(row: Record<string, unknown>, mappedHeaders: ReadonlySet<string>): MapLocation["customData"] {
   return Object.fromEntries(
     Object.entries(row)
       .filter(([key, value]) => {
         const normalized = normalizeHeader(key);
-        return !knownHeaders.has(normalized)
+        return !mappedHeaders.has(key)
+          && !knownHeaders.has(normalized)
           && !/^(?:label|customlabel)\d+$/.test(normalized)
           && value !== ""
           && value != null;
       })
       .map(([key, value]) => [key, typeof value === "number" || typeof value === "boolean" ? value : String(value)]),
   );
+}
+
+export function getCsvHeaders(text: string): string[] {
+  const parsed = Papa.parse<Record<string, unknown>>(text, {
+    header: true,
+    preview: 1,
+    skipEmptyLines: "greedy",
+    transformHeader: (header) => header.trim(),
+  });
+  return (parsed.meta.fields ?? []).filter(Boolean);
+}
+
+export function suggestCsvColumnMap(headers: string[]): CsvColumnMap {
+  const normalized = new Map(headers.map((header) => [normalizeHeader(header), header]));
+  return Object.fromEntries(CSV_IMPORT_FIELDS.map((field) => {
+    const match = aliases[field].map((candidate) => normalized.get(candidate)).find(Boolean);
+    return [field, match ?? ""];
+  })) as CsvColumnMap;
 }
 
 function additionalLabelsFor(row: Record<string, unknown>): string[] {
@@ -80,7 +106,7 @@ function additionalLabelsFor(row: Record<string, unknown>): string[] {
     .filter(Boolean);
 }
 
-export function parseLocationsCsv(text: string, options: { layerId?: string } = {}): ImportResult {
+export function parseLocationsCsv(text: string, options: { layerId?: string; columnMap?: CsvColumnMap } = {}): ImportResult {
   const parsed = Papa.parse<Record<string, unknown>>(text, {
     header: true,
     skipEmptyLines: "greedy",
@@ -92,18 +118,19 @@ export function parseLocationsCsv(text: string, options: { layerId?: string } = 
 
   const locations: MapLocation[] = [];
   const issues: ImportResult["issues"] = [];
+  const mappedHeaders = new Set(Object.values(options.columnMap ?? {}).filter(Boolean));
   parsed.data.forEach((row, index) => {
     const rowNumber = index + 2;
-    const city = valueFor(row, aliases.city);
-    const state = normalizeState(valueFor(row, aliases.state));
+    const city = valueFor(row, aliases.city, options.columnMap?.city);
+    const state = normalizeState(valueFor(row, aliases.state, options.columnMap?.state));
     if (!city && !state) return;
     if (!city || !state) {
       issues.push({ row: rowNumber, city, state, reason: "City and state are both required." });
       return;
     }
 
-    const latitudeText = valueFor(row, aliases.latitude);
-    const longitudeText = valueFor(row, aliases.longitude);
+    const latitudeText = valueFor(row, aliases.latitude, options.columnMap?.latitude);
+    const longitudeText = valueFor(row, aliases.longitude, options.columnMap?.longitude);
     const suppliedCoordinates = latitudeText !== "" || longitudeText !== "";
     let latitude = Number(latitudeText);
     let longitude = Number(longitudeText);
@@ -121,8 +148,8 @@ export function parseLocationsCsv(text: string, options: { layerId?: string } = 
       return;
     }
 
-    const label = valueFor(row, aliases.label) || `${city}, ${state}`;
-    const company = valueFor(row, aliases.company);
+    const label = valueFor(row, aliases.label, options.columnMap?.label) || `${city}, ${state}`;
+    const company = valueFor(row, aliases.company, options.columnMap?.company);
     const pinColorValue = valueFor(row, aliases.pinColor);
     const labelColorValue = valueFor(row, aliases.labelColor);
     const pinSizeValue = Number(valueFor(row, aliases.pinSize));
@@ -140,8 +167,8 @@ export function parseLocationsCsv(text: string, options: { layerId?: string } = 
       pinSize: Number.isFinite(pinSizeValue) ? Math.min(40, Math.max(6, pinSizeValue)) : 16,
       labelColor: isHexColor(labelColorValue) ? labelColorValue : "#373a36",
       labelPosition: parseLabelPosition(valueFor(row, aliases.labelPosition)),
-      notes: valueFor(row, aliases.notes),
-      customData: { ...customDataFor(row), ...(company ? { company } : {}) },
+      notes: valueFor(row, aliases.notes, options.columnMap?.notes),
+      customData: { ...customDataFor(row, mappedHeaders), ...(company ? { company } : {}) },
     });
     if (company) location.callout.labels.push(createLocationLabel("company", company));
     for (const additionalLabel of additionalLabelsFor(row)) {

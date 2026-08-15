@@ -14,7 +14,7 @@ The MCP server lets a local AI client inspect the project currently open in USA 
 - Removing locations and replacing a project are flagged as destructive to MCP clients, even though they still stop at human review.
 - Removing a layer is also flagged as destructive because its assigned locations are included in the proposal removal.
 - `stage_custom_pin_import` sanitizes and embeds the submitted SVG before the proposal is shown. It can optionally assign the new design to one existing location or all locations, but still cannot apply or save the result. Safe Illustrator class-based gradient and stroke styles are converted to portable SVG presentation attributes.
-- Complete-project reads include the saved zoom/pan export viewport. Location read results include the complete schema-version-5 callout: ordered City, Company, and custom rows; independent typography; stored offsets; lock state; and leader-line settings. `stage_location_update` can stage a complete replacement `callout` object after reading the current location.
+- Complete-project reads include the saved zoom/pan export viewport and schema-version-6 label view. Location read results include the complete editable callout: ordered City, Company, and custom rows; independent typography; stored offsets; lock state; and leader-line settings. `stage_location_update` can stage a complete replacement `callout` object after reading the current location.
 
 When a read tool returns project or CSV-derived content, that returned content becomes part of the AI conversation. Do not use an AI client with material that is not approved for that client.
 
@@ -77,5 +77,7 @@ For city/state lists, prefer `stage_locations_from_csv`; it uses the same bundle
 | `stage_layer_remove` | Remove a layer and its assigned locations after human review. |
 
 All tools use stable layer IDs, not names, for mutation. This avoids mixing similarly named contract groups and preserves a clear audit trail in the proposal review.
+
+Map-setting proposals can set `locationLabelMode` to `pins`, `city`, `city-company`, `selected-layer`, or `selected-location`. The selected preset changes the active canvas and export view without deleting the saved callout rows.
 
 `stage_location_update` accepts `visible: false` to hide one city without deleting it and `visible: true` to show it again. To change rendered labels, prefer the complete `callout` field returned by `get_current_project` or `list_locations`. Its `visible` field hides only the callout, each label row has its own `visible` field, and the callout can carry manual offsets plus straight or elbow leader lines. Legacy `showLabel`, `label`, `labelColor`, and `labelPosition` patches remain supported and are translated into the version-5 callout model before review.

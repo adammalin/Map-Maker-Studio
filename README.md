@@ -10,7 +10,9 @@ USA Map Studio is a local-first Electron desktop editor for building accurate ma
 - Hide or show any individual city without deleting it. Hidden locations remain in the list and project JSON but are omitted from the map and every export.
 - Choose **All pins** or **This pin** directly in the location inspector. All pins is the default and applies type, custom SVG, color, and size changes everywhere; This pin preserves the current appearance and edits only the selected location.
 - Add City, Company, and custom label rows to each location. Every exported row is one editable line with independent text, visibility, font family, exact numeric font size, weight, and color controls.
-- Drag each multi-row callout as one unit, lock manual placements, choose automatic/straight/elbow/no leader lines, and run **Arrange labels** to resolve collisions. Dense layouts can use automatically selected edge rails, and unresolved or out-of-bounds callouts are flagged for review.
+- Switch among saved **Pins only**, **City names**, **City + Company**, **Selected layer labels**, and **Selected location label** views. The same derived display state drives the canvas, SVG, PNG, and editable PowerPoint.
+- Drag each multi-row callout as one unit, lock manual placements, choose automatic/straight/elbow/no leader lines, and run **Arrange labels** to resolve collisions. Dense layouts can use automatically selected edge rails; the routing engine and export preflight detect both text collisions and crossed leader lines.
+- Open the spreadsheet-style bulk editor to change City, State, Company, layer, pin visibility, or callout visibility across many locations. CSV import includes an adjustable column-mapping panel for unfamiliar client headings.
 - Import reusable custom SVG pin artwork for all pins or only the selected pin, according to the active editing scope. Sanitized vector markup is embedded in the project JSON so the design travels with the file; safe Illustrator gradient and stroke styles are retained, and SVGs using `currentColor` follow the effective pin color.
 - Choose colors from named ORNL Primary, Secondary, and Accent swatches in every color field, or keep using the native picker and exact hex values. The swatches are a draft aid and do not replace communications review.
 - Switch between distinct workspaces: Map editor maximizes the canvas, Locations opens the searchable location manager, Layers controls organization and visibility, Map style focuses the global/state appearance inspector, and Export shows output choices.
@@ -19,18 +21,19 @@ USA Map Studio is a local-first Electron desktop editor for building accurate ma
 - Use familiar project shortcuts for Save (`Cmd/Ctrl+S`), Open (`Cmd/Ctrl+O`), New (`Cmd/Ctrl+N`), Undo/Redo, location search (`/`), and the in-app keyboard reference (`?`). Text fields keep their normal editing behavior.
 - Select a state for a fill override, drag pins without Space held to refine coordinates, or drag a callout to place its labels manually.
 - Save and reopen a versioned `.usmap.json` project containing the complete map configuration, exact zoom/pan export framing, ordered layers, layer/location visibility, shared style, every label row and callout position, and every location.
-- Autosave every project-changing action. After a project is opened or saved, the same `.usmap.json` file is updated atomically; until a user-selected path exists, the app maintains an internal JSON recovery file and restores it on launch.
+- Autosave every project-changing action. After a project is opened or saved, the same `.usmap.json` file is updated atomically; until a user-selected path exists, the app maintains an internal JSON recovery file and restores it on launch. Version history keeps up to 24 rotating automatic or manual recovery points and captures additional points before high-impact bulk operations.
+- Review an export preflight before SVG, PNG, or PowerPoint output. It reports visible and hidden data, active label view, missing Company values, label collisions, off-canvas callouts, leader-line crossings, font availability, and editable PowerPoint structure.
 - Export the exact visible composition, including the effective All pins/This pin size, callout positions, leader lines, and current zoom/pan viewport, as a scalable SVG, a 2400 x 1440 PNG, or a one-slide 16:9 PowerPoint. PowerPoint states, boundary layers, every label row, leader lines, standard pins, and legend remain separate editable objects; custom SVG pins remain separate movable vector objects and preserve their source aspect ratio. SVG uses named layer groups, and visible PowerPoint location objects are prefixed with their layer name in the Selection Pane.
 - Let ChatGPT desktop, Codex, or another local MCP client inspect the open project and stage visible map-change proposals for human review.
 
 The interface deliberately follows the clear hierarchy and square-edged desktop design language of OrgChart Studio while remaining a separate product.
 
-Current application version: **0.6.0**. The pre-callout baseline is preserved as the [v0.5.1 release](https://github.com/adammalin/Map-Maker-Studio/releases/tag/v0.5.1).
+Current application version: **0.7.0**. The pre-callout baseline is preserved as the [v0.5.1 release](https://github.com/adammalin/Map-Maker-Studio/releases/tag/v0.5.1).
 
 ## Documentation
 
 - [USA Map Studio User Guide (PDF)](docs/USA-Map-Studio-User-Guide.pdf) - installation commands, Illustrator-style canvas navigation and shortcuts, workspace modes, CSV import, custom SVG pins, ORNL color swatches, exports, and local MCP control.
-- [Project file format](docs/PROJECT-FORMAT.md) - schema version 5 viewport, layers, multi-row label callouts, per-location visibility, shared pin styling, embedded custom pins, validation, and earlier-version migration.
+- [Project file format](docs/PROJECT-FORMAT.md) - schema version 6 label views, viewport, layers, multi-row label callouts, per-location visibility, shared pin styling, embedded custom pins, validation, and earlier-version migration.
 - [Local MCP integration](docs/MCP.md) - security model, setup, client configuration, and the review-first workflow.
 - [Editable PowerPoint example](examples/usa-map-studio-editable-export.pptx) - a generated sample for checking the PowerPoint Selection Pane and direct object editing.
 
@@ -107,7 +110,7 @@ Oak Ridge,TN
 Seattle,WA
 ```
 
-Supported headers are flexible and case-insensitive. The canonical columns are:
+Supported headers are flexible and case-insensitive. The import review includes a column-mapping panel when a client file uses different headings. The canonical columns are:
 
 | Column | Required | Purpose |
 | --- | --- | --- |
@@ -134,7 +137,7 @@ The CSV does not need a layer column. Choose the target layer in the import revi
 
 Project files use the `.usmap.json` suffix and include a schema identifier and version. The format is documented in [docs/PROJECT-FORMAT.md](docs/PROJECT-FORMAT.md). Opening a project validates its schema, colors, coordinates, and required fields before replacing the current canvas. Once opened or saved, project-changing actions automatically update that file using an atomic temporary-file replacement. A separate internal recovery JSON is maintained and restored after an interrupted or ordinary relaunch.
 
-Imported pin designs live in the project-level `customPins` library as sanitized SVG strings, and locations or the shared pin style select them by ID. There are no source-file path dependencies, so a saved project can be moved to another supported computer without losing its pin artwork. Schema versions 1 through 4 remain supported and migrate in memory to schema version 5 when opened; a version 4 label becomes the first City row without losing its text, visibility, color, or placement.
+Imported pin designs live in the project-level `customPins` library as sanitized SVG strings, and locations or the shared pin style select them by ID. There are no source-file path dependencies, so a saved project can be moved to another supported computer without losing its pin artwork. Schema versions 1 through 5 remain supported and migrate in memory to schema version 6 when opened; a version 4 label becomes the first City row without losing its text, visibility, color, or placement, and version 5 projects default to the City names view.
 
 ## Development and verification
 

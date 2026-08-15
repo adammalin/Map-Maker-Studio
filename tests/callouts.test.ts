@@ -7,6 +7,8 @@ import {
   createLocationLabel,
   enableProjectLocationLabels,
   findCalloutOverlaps,
+  findLeaderLineCrossings,
+  materializeLabelDisplay,
   measureCallout,
 } from "../src/lib/callouts";
 
@@ -108,4 +110,33 @@ test("enabling labels preserves deliberate per-location hidden states", () => {
   assert.equal(enabled.project.map.showLocationLabels, true);
   assert.equal(enabled.project.locations[0].callout.visible, true);
   assert.equal(enabled.project.locations[1].callout.visible, false);
+});
+
+test("label display modes derive City, Company, layer, and selected-location views without mutating data", () => {
+  const project = createDefaultProject();
+  project.locations[0].callout.labels.push(createLocationLabel("company", "Example Company"));
+
+  project.map.locationLabelMode = "city";
+  const city = materializeLabelDisplay(project);
+  assert.deepEqual(city.locations[0].callout.labels.map((label) => label.visible), [true, false]);
+
+  project.map.locationLabelMode = "city-company";
+  const company = materializeLabelDisplay(project);
+  assert.deepEqual(company.locations[0].callout.labels.map((label) => label.visible), [true, true]);
+
+  project.map.locationLabelMode = "selected-location";
+  const selected = materializeLabelDisplay(project, { selectedLocationId: project.locations[1].id });
+  assert.equal(selected.locations[0].callout.visible, false);
+  assert.equal(selected.locations[1].callout.visible, true);
+  assert.equal(project.locations[0].callout.labels[1].visible, true);
+});
+
+test("leader-line crossing detector flags intersecting callout routes", () => {
+  const project = createDefaultProject();
+  project.locations = [project.locations[0], project.locations[7]];
+  const [first, second] = project.locations;
+  first.callout = { ...first.callout, leaderLine: "straight", offsetX: 740, offsetY: 364, anchor: "start" };
+  second.callout = { ...second.callout, leaderLine: "straight", offsetX: -804, offsetY: 201, anchor: "end" };
+
+  assert.equal(findLeaderLineCrossings(project).length, 1);
 });

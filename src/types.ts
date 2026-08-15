@@ -1,5 +1,5 @@
 export const PROJECT_SCHEMA = "usa-map-studio/project";
-export const PROJECT_SCHEMA_VERSION = 5;
+export const PROJECT_SCHEMA_VERSION = 6;
 
 export type PinType = "pin" | "circle" | "square" | "diamond" | "star";
 export type LabelPosition = "right" | "left" | "above" | "below";
@@ -8,6 +8,7 @@ export type CalloutPlacementMode = "auto" | "manual";
 export type LeaderLineStyle = "auto" | "none" | "straight" | "elbow";
 export type LocationLabelRole = "city" | "company" | "custom";
 export type LocationLabelWeight = 400 | 500 | 600 | 700 | 800;
+export type LocationLabelMode = "pins" | "city" | "city-company" | "selected-layer" | "selected-location";
 
 export interface LocationLabel {
   id: string;
@@ -91,6 +92,7 @@ export interface MapSettings {
   showCountyLines: boolean;
   showStateLabels: boolean;
   showLocationLabels: boolean;
+  locationLabelMode: LocationLabelMode;
   showLegend: boolean;
   stateColors: Record<string, string>;
 }
@@ -154,6 +156,16 @@ export interface DesktopSaveResult {
   filePath?: string;
 }
 
+export interface ProjectSnapshot {
+  id: string;
+  label: string;
+  createdAt: string;
+  projectName: string;
+  locationCount: number;
+  layerCount: number;
+  filePath: string;
+}
+
 export interface UsaMapDesktopApi {
   isDesktop: true;
   platform: string;
@@ -186,6 +198,9 @@ export interface UsaMapDesktopApi {
     projectFilePath: string | null;
     recoveryPath: string;
   }>;
+  listProjectSnapshots(): Promise<ProjectSnapshot[]>;
+  createProjectSnapshot(payload: { text: string; label: string }): Promise<ProjectSnapshot>;
+  readProjectSnapshot(id: string): Promise<{ text: string; snapshot: ProjectSnapshot }>;
   resetAutosaveTarget(): Promise<{ reset: true }>;
   onMcpCommand(
     handler: (request: DesktopMcpCommand) => Promise<unknown> | unknown,

@@ -25,6 +25,7 @@ const MAP_KEYS = new Set<keyof MapSettings>([
   "showCountyLines",
   "showStateLabels",
   "showLocationLabels",
+  "locationLabelMode",
   "showLegend",
   "stateColors",
 ]);

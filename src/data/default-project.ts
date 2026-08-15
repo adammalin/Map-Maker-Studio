@@ -94,6 +94,7 @@ export function createDefaultProject(): UsaMapProject {
       showCountyLines: false,
       showStateLabels: false,
       showLocationLabels: true,
+      locationLabelMode: "city",
       showLegend: true,
       stateColors: {},
     },

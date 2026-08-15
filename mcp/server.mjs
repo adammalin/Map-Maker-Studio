@@ -4,7 +4,7 @@ import { z } from "zod";
 import { MapAppClient, MapAppUnavailableError } from "./map-app-client.mjs";
 
 const SERVER_NAME = "usa-map-studio-local";
-const SERVER_VERSION = "0.6.0";
+const SERVER_VERSION = "0.7.0";
 
 const customValue = z.union([z.string(), z.number(), z.boolean(), z.null()]);
 const locationLabel = z.object({
@@ -64,6 +64,7 @@ const mapPatch = z.object({
   showCountyLines: z.boolean().optional(),
   showStateLabels: z.boolean().optional(),
   showLocationLabels: z.boolean().optional(),
+  locationLabelMode: z.enum(["pins", "city", "city-company", "selected-layer", "selected-location"]).optional(),
   showLegend: z.boolean().optional(),
   stateColors: z.record(z.string(), z.string().regex(/^#[0-9a-f]{6}$/i)).optional(),
 });

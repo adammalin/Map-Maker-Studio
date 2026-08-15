@@ -5,6 +5,7 @@ import {
   ArrowsOut,
   BracketsCurly,
   CheckCircle,
+  ClockCounterClockwise,
   DownloadSimple,
   Eye,
   EyeSlash,
@@ -26,16 +27,17 @@ import {
   Sparkle,
   SquaresFour,
   Stack,
+  Table,
   WarningDiamond,
   X,
 } from "@phosphor-icons/react";
 import { createBlankProject, createDefaultProject, createLocation, createMapLayer } from "./data/default-project";
-import { parseLocationsCsv, CSV_TEMPLATE } from "./lib/csv";
+import { getCsvHeaders, parseLocationsCsv, suggestCsvColumnMap, CSV_TEMPLATE, type CsvColumnMap, type CsvImportField } from "./lib/csv";
 import { downloadBlob, prepareSvgMarkup, projectToPowerPoint, svgToPng } from "./lib/export";
 import { fileSafeName, mergeLocationPatch, parseProjectText, serializeProject } from "./lib/project";
 import { buildMcpProposal, validateProjectCandidate } from "./lib/mcp-proposals";
 import { createCustomPinDesign } from "./lib/custom-pin";
-import { arrangeProjectCallouts, enableProjectLocationLabels, findCalloutOverlaps } from "./lib/callouts";
+import { arrangeProjectCallouts, createLocationLabel, enableProjectLocationLabels, findCalloutOverlaps, findLeaderLineCrossings, materializeLabelDisplay } from "./lib/callouts";
 import {
   applySharedPinStylePatch,
   effectivePinStyle,
@@ -43,7 +45,7 @@ import {
   materializeEffectivePinStyles,
   setPinEditingScope as applyPinEditingScope,
 } from "./lib/layers";
-import type { AiMapProposal, ImportResult, LocationLabel, MapLayer, MapLocation, MapSettings, MapViewport, SharedPinStyle, UsaMapProject } from "./types";
+import type { AiMapProposal, ImportResult, LocationLabel, LocationLabelMode, MapLayer, MapLocation, MapSettings, MapViewport, ProjectSnapshot, SharedPinStyle, UsaMapProject } from "./types";
 import { MapCanvas } from "./components/MapCanvas";
 import { MapMiniMap } from "./components/MapMiniMap";
 import { KeyboardShortcutsDialog } from "./components/KeyboardShortcutsDialog";
@@ -52,6 +54,11 @@ import { ImportDialog } from "./components/ImportDialog";
 import { AiProposalDialog } from "./components/AiProposalDialog";
 import { LayerInspector, LayerPanel } from "./components/LayerPanel";
 import { steppedMapZoom, zoomViewportAt } from "./lib/viewport";
+import { LocationDataTableDialog } from "./components/LocationDataTableDialog";
+import { VersionHistoryDialog } from "./components/VersionHistoryDialog";
+import { ExportPreflightDialog } from "./components/ExportPreflightDialog";
+import { buildExportPreflight } from "./lib/preflight";
+import { resolveCity } from "./lib/geocoder";
 
 interface HistoryState {
   past: UsaMapProject[];
@@ -62,6 +69,9 @@ interface HistoryState {
 interface PendingImport {
   result: ImportResult;
   fileName: string;
+  text: string;
+  headers: string[];
+  columnMap: CsvColumnMap;
 }
 
 type ExportKind = "svg" | "png" | "pptx";
@@ -75,7 +85,7 @@ const WORKSPACE_MODE_COPY: Record<WorkspaceMode, { title: string; description: s
   export: { title: "Export preview", description: "Review the composition and choose an output format" },
 };
 
-const APP_VERSION = "0.6.0";
+const APP_VERSION = "0.7.0";
 
 export function App() {
   const [history, setHistory] = useState<HistoryState>({ past: [], present: createDefaultProject(), future: [] });
@@ -95,6 +105,11 @@ export function App() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [exporting, setExporting] = useState<ExportKind | null>(null);
   const [activeSidebar, setActiveSidebar] = useState<WorkspaceMode>("map");
+  const [locationDataOpen, setLocationDataOpen] = useState(false);
+  const [versionHistoryOpen, setVersionHistoryOpen] = useState(false);
+  const [snapshots, setSnapshots] = useState<ProjectSnapshot[]>([]);
+  const [snapshotLoading, setSnapshotLoading] = useState(false);
+  const [pendingExport, setPendingExport] = useState<ExportKind | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const csvInputRef = useRef<HTMLInputElement>(null);
   const projectInputRef = useRef<HTMLInputElement>(null);
@@ -104,11 +119,18 @@ export function App() {
   const project = history.present;
   const { zoom, pan } = project.viewport;
   const workspaceCopy = WORKSPACE_MODE_COPY[activeSidebar];
-  const calloutOverlaps = useMemo(() => findCalloutOverlaps(project), [project]);
-  const overlapLocationIds = useMemo(() => new Set(calloutOverlaps.flatMap((overlap) => [overlap.firstLocationId, overlap.secondLocationId])), [calloutOverlaps]);
-
   const selectedLocation = project.locations.find((location) => location.id === selectedLocationId) ?? null;
   const selectedLayer = project.layers.find((layer) => layer.id === selectedLayerId) ?? project.layers[0];
+  const displayProject = useMemo(() => materializeLabelDisplay(project, {
+    selectedLayerId: selectedLayer?.id ?? null,
+    selectedLocationId,
+  }), [project, selectedLayer?.id, selectedLocationId]);
+  const calloutOverlaps = useMemo(() => findCalloutOverlaps(displayProject), [displayProject]);
+  const leaderLineCrossings = useMemo(() => findLeaderLineCrossings(displayProject), [displayProject]);
+  const overlapLocationIds = useMemo(() => new Set([
+    ...calloutOverlaps.flatMap((overlap) => [overlap.firstLocationId, overlap.secondLocationId]),
+    ...leaderLineCrossings.flatMap((crossing) => [crossing.firstLocationId, crossing.secondLocationId]),
+  ]), [calloutOverlaps, leaderLineCrossings]);
   const filteredLocations = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     if (!query) return project.locations;
@@ -117,6 +139,17 @@ export function App() {
         .some((value) => value.toLowerCase().includes(query)),
     );
   }, [project, searchQuery]);
+  const unavailableLabelFonts = useMemo(() => {
+    if (!document.fonts?.check) return [];
+    const fonts = new Set(displayProject.locations.flatMap((location) => location.callout.labels
+      .filter((label) => label.visible && label.text.trim())
+      .map((label) => label.fontFamily)));
+    return [...fonts].filter((font) => !document.fonts.check(`12px "${font.replaceAll('"', "")}"`));
+  }, [displayProject]);
+  const exportPreflight = useMemo(
+    () => buildExportPreflight(displayProject, unavailableLabelFonts),
+    [displayProject, unavailableLabelFonts],
+  );
 
   const showNotice = useCallback((message: string) => {
     setNotice(message);
@@ -184,11 +217,21 @@ export function App() {
   }
 
   function updateMap(patch: Partial<MapSettings>) {
-    const revealingAllLabels = patch.showLocationLabels === true
+    const requestedMode: LocationLabelMode = patch.locationLabelMode
+      ?? (patch.showLocationLabels === false ? "pins" : patch.showLocationLabels === true
+        ? project.map.locationLabelMode === "pins" ? "city" : project.map.locationLabelMode
+        : project.map.locationLabelMode);
+    const normalizedPatch: Partial<MapSettings> = {
+      ...patch,
+      ...(patch.locationLabelMode !== undefined || patch.showLocationLabels !== undefined
+        ? { locationLabelMode: requestedMode, showLocationLabels: requestedMode !== "pins" }
+        : {}),
+    };
+    const revealingAllLabels = requestedMode !== "pins"
       && !project.locations.some((location) => location.callout.visible);
     commitProject((current) => {
-      const next = { ...current, map: { ...current.map, ...patch } };
-      return patch.showLocationLabels === true
+      const next = { ...current, map: { ...current.map, ...normalizedPatch } };
+      return requestedMode !== "pins"
         ? enableProjectLocationLabels(next).project
         : next;
     });
@@ -223,11 +266,80 @@ export function App() {
   }
 
   function arrangeCallouts() {
-    const arranged = arrangeProjectCallouts(project);
-    commitProject(() => arranged.project);
-    showNotice(arranged.overlaps.length
-      ? `Labels were arranged. ${arranged.overlaps.length} dense-area overlap${arranged.overlaps.length === 1 ? " remains" : "s remain"}; drag those callouts to finish.`
-      : "Labels were arranged with no detected callout overlaps. Locked callouts were preserved.");
+    void createRecoveryPoint("Before arranging labels", true);
+    const arranged = arrangeProjectCallouts(displayProject);
+    const arrangedById = new Map(arranged.project.locations.map((location) => [location.id, location.callout]));
+    commitProject((current) => ({
+      ...current,
+      locations: current.locations.map((location) => {
+        const callout = arrangedById.get(location.id);
+        return callout ? {
+          ...location,
+          callout: {
+            ...location.callout,
+            offsetX: callout.offsetX,
+            offsetY: callout.offsetY,
+            anchor: callout.anchor,
+            placementMode: callout.placementMode,
+            locked: callout.locked,
+          },
+        } : location;
+      }),
+    }));
+    const issues = arranged.overlaps.length + arranged.crossings.length;
+    showNotice(issues
+      ? `Labels were arranged. ${arranged.overlaps.length} overlap${arranged.overlaps.length === 1 ? "" : "s"} and ${arranged.crossings.length} leader crossing${arranged.crossings.length === 1 ? "" : "s"} remain for review.`
+      : "Labels were arranged with no detected overlaps or leader-line crossings. Locked callouts were preserved.");
+  }
+
+  function updateLocationCompany(id: string, company: string) {
+    commitProject((current) => ({
+      ...current,
+      locations: current.locations.map((location) => {
+        if (location.id !== id) return location;
+        const companyIndex = location.callout.labels.findIndex((label) => label.role === "company");
+        const labels = location.callout.labels.map((label) => ({ ...label }));
+        if (companyIndex >= 0) labels[companyIndex] = { ...labels[companyIndex], text: company };
+        else if (company) labels.push(createLocationLabel("company", company));
+        const customData = { ...location.customData };
+        if (company) customData.company = company; else delete customData.company;
+        return { ...location, customData, callout: { ...location.callout, labels } };
+      }),
+    }));
+  }
+
+  function updateLocationPlace(id: string, city: string, state: string): boolean {
+    const match = resolveCity(city, state);
+    if (!match) {
+      showNotice(`${city}, ${state} was not found in the bundled Census place index. The existing place and coordinates were preserved.`);
+      return false;
+    }
+    updateLocation(id, {
+      city: match.city,
+      state: match.state,
+      latitude: match.latitude,
+      longitude: match.longitude,
+    });
+    return true;
+  }
+
+  function bulkUpdateLocations(ids: string[], patch: { layerId?: string; visible?: boolean; calloutVisible?: boolean }) {
+    if (!ids.length) return;
+    void createRecoveryPoint(`Before bulk editing ${ids.length} locations`, true);
+    const selected = new Set(ids);
+    commitProject((current) => ({
+      ...current,
+      locations: current.locations.map((location) => selected.has(location.id) ? {
+        ...location,
+        ...(patch.layerId ? { layerId: patch.layerId } : {}),
+        ...(patch.visible !== undefined ? { visible: patch.visible } : {}),
+        ...(patch.calloutVisible !== undefined ? {
+          showLabel: patch.calloutVisible,
+          callout: { ...location.callout, visible: patch.calloutVisible },
+        } : {}),
+      } : location),
+    }));
+    showNotice(`${ids.length} locations were updated. A recovery point was captured first.`);
   }
 
   function applyLabelStyleToRole(source: LocationLabel) {
@@ -440,10 +552,25 @@ export function App() {
 
   function reviewCsv(text: string, fileName: string) {
     try {
-      setPendingImport({ result: parseLocationsCsv(text), fileName });
+      const headers = getCsvHeaders(text);
+      const columnMap = suggestCsvColumnMap(headers);
+      setPendingImport({ result: parseLocationsCsv(text, { columnMap }), fileName, text, headers, columnMap });
     } catch (error) {
       showNotice(error instanceof Error ? error.message : "The CSV could not be read.");
     }
+  }
+
+  function updateCsvColumnMapping(field: CsvImportField, header: string) {
+    setPendingImport((current) => {
+      if (!current) return current;
+      const columnMap = { ...current.columnMap, [field]: header };
+      try {
+        return { ...current, columnMap, result: parseLocationsCsv(current.text, { columnMap }) };
+      } catch (error) {
+        showNotice(error instanceof Error ? error.message : "The CSV mapping could not be applied.");
+        return current;
+      }
+    });
   }
 
   async function openProject() {
@@ -485,12 +612,66 @@ export function App() {
     showNotice("Project JSON downloaded.");
   }
 
+  async function refreshProjectSnapshots() {
+    if (!window.usaMapDesktop) return;
+    setSnapshotLoading(true);
+    try {
+      setSnapshots(await window.usaMapDesktop.listProjectSnapshots());
+    } catch (error) {
+      showNotice(error instanceof Error ? error.message : "Version history could not be read.");
+    } finally {
+      setSnapshotLoading(false);
+    }
+  }
+
+  async function createRecoveryPoint(label = "Manual recovery point", quiet = false): Promise<ProjectSnapshot | null> {
+    if (!window.usaMapDesktop) {
+      if (!quiet) showNotice("Persistent recovery points are available in the desktop app.");
+      return null;
+    }
+    try {
+      const snapshot = await window.usaMapDesktop.createProjectSnapshot({ text: serializeProject(project), label });
+      setSnapshots((current) => [snapshot, ...current.filter((candidate) => candidate.id !== snapshot.id)].slice(0, 24));
+      if (!quiet) showNotice("Recovery point created.");
+      return snapshot;
+    } catch (error) {
+      showNotice(error instanceof Error ? error.message : "The recovery point could not be created.");
+      return null;
+    }
+  }
+
+  async function openVersionHistory() {
+    setVersionHistoryOpen(true);
+    await refreshProjectSnapshots();
+  }
+
+  async function restoreProjectSnapshot(snapshot: ProjectSnapshot) {
+    if (!window.usaMapDesktop) return;
+    setSnapshotLoading(true);
+    try {
+      await createRecoveryPoint("Before restoring an earlier version", true);
+      const restored = await window.usaMapDesktop.readProjectSnapshot(snapshot.id);
+      replaceProject(parseProjectText(restored.text), false);
+      setVersionHistoryOpen(false);
+      showNotice(`Restored ${snapshot.label} from ${new Date(snapshot.createdAt).toLocaleString()}. The restored map is autosaving now.`);
+    } catch (error) {
+      showNotice(error instanceof Error ? error.message : "The recovery point could not be restored.");
+    } finally {
+      setSnapshotLoading(false);
+    }
+  }
+
+  function requestExport(kind: ExportKind) {
+    if (exporting) return;
+    setPendingExport(kind);
+  }
+
   async function exportMap(kind: ExportKind) {
     if (!svgRef.current || exporting) return;
     setExporting(kind);
     try {
       const svg = prepareSvgMarkup(svgRef.current);
-      const exportProject = materializeEffectivePinStyles(project);
+      const exportProject = materializeEffectivePinStyles(displayProject);
       const stem = fileSafeName(exportProject.project.name);
       if (kind === "svg") {
         const defaultName = `${stem}.svg`;
@@ -840,6 +1021,7 @@ export function App() {
           <p className="sidebar__label">Resources</p>
           <button type="button" onClick={() => { downloadBlob("usa-map-studio-template.csv", new Blob([CSV_TEMPLATE], { type: "text/csv" })); showNotice("CSV template downloaded."); }}><FileArrowUp size={19} /><span>CSV template</span></button>
           <button type="button" onClick={() => void openGuide()}><Question size={19} /><span>User guide</span></button>
+          {window.usaMapDesktop ? <button type="button" onClick={() => void openVersionHistory()}><ClockCounterClockwise size={19} /><span>Version history</span></button> : null}
           {window.usaMapDesktop ? <button type="button" className={pendingAiProposal ? "has-pending-proposal" : ""} onClick={() => pendingAiProposal ? setAiProposalOpen(true) : showNotice("Local AI control is ready. Connect through the installed USA Map Studio MCP server.")}><Robot size={19} /><span>Local AI control</span>{pendingAiProposal ? <span className="nav-count">1</span> : null}</button> : null}
         </div>
         <div className="sidebar__summary">
@@ -872,7 +1054,14 @@ export function App() {
               <div role="group" aria-label="Map detail controls">
                 <button type="button" className={project.map.showCountyLines ? "is-active" : ""} aria-pressed={project.map.showCountyLines} onClick={() => updateMap({ showCountyLines: !project.map.showCountyLines })}>Counties</button>
                 <button type="button" className={project.map.showStateLabels ? "is-active" : ""} aria-pressed={project.map.showStateLabels} onClick={() => updateMap({ showStateLabels: !project.map.showStateLabels })}>State labels</button>
-                <button type="button" className={project.map.showLocationLabels ? "is-active" : ""} aria-pressed={project.map.showLocationLabels} onClick={() => updateMap({ showLocationLabels: !project.map.showLocationLabels })}>Pin labels</button>
+                <button type="button" className={project.map.locationLabelMode !== "pins" ? "is-active" : ""} aria-pressed={project.map.locationLabelMode !== "pins"} onClick={() => updateMap({ locationLabelMode: project.map.locationLabelMode === "pins" ? "city" : "pins" })}>Pin labels</button>
+                <select className="label-view-select" data-testid="label-view-select" value={project.map.locationLabelMode} onChange={(event) => updateMap({ locationLabelMode: event.target.value as LocationLabelMode })} aria-label="Label view">
+                  <option value="pins">Pins only</option>
+                  <option value="city">City names</option>
+                  <option value="city-company">City + Company</option>
+                  <option value="selected-layer">Selected layer labels</option>
+                  <option value="selected-location">Selected location label</option>
+                </select>
               </div>
             </div>
             <div className="zoom-status" data-testid="zoom-status" aria-label={`Map zoom ${Math.round(zoom * 100)} percent`}><strong>{Math.round(zoom * 100)}%</strong><small>Space + drag to pan · scroll to zoom</small></div>
@@ -888,7 +1077,7 @@ export function App() {
                 <button type="button" className="button button--secondary button--history" onClick={undo} disabled={!history.past.length} aria-label="Undo"><ArrowCounterClockwise size={17} /></button>
                 <button type="button" className="button button--secondary button--history" onClick={redo} disabled={!history.future.length} aria-label="Redo"><ArrowClockwise size={17} /></button>
               </div>
-              <button type="button" className="button button--primary" onClick={() => void exportMap("png")} disabled={exporting !== null}><DownloadSimple size={17} /> {exporting ? "Exporting…" : "Quick PNG"}</button>
+              <button type="button" className="button button--primary" onClick={() => requestExport("png")} disabled={exporting !== null}><DownloadSimple size={17} /> {exporting ? "Exporting…" : "Quick PNG"}</button>
             </div>
           </div>
 
@@ -908,7 +1097,7 @@ export function App() {
             ) : null}
             {activeSidebar === "locations" ? <aside className="location-panel" aria-label="Map locations">
               <div className="panel-heading"><div><small>Data</small><h2>Locations</h2></div><button type="button" className="icon-button icon-button--primary" onClick={addLocation} aria-label="Add location"><Plus size={18} weight="bold" /></button></div>
-              <div className="location-panel__actions"><button type="button" className="button button--secondary" onClick={() => void openCsv()}><FileCsv size={16} /> Import CSV</button><button type="button" className="button button--secondary" onClick={addLocation}><MapPin size={16} /> Add pin</button></div>
+              <div className="location-panel__actions"><button type="button" className="button button--secondary" onClick={() => void openCsv()}><FileCsv size={16} /> Import CSV</button><button type="button" className="button button--secondary" onClick={addLocation}><MapPin size={16} /> Add pin</button><button type="button" className="button button--secondary" onClick={() => setLocationDataOpen(true)}><Table size={16} /> Bulk edit</button></div>
               <div className="location-list" data-testid="location-list">
                 {filteredLocations.length ? filteredLocations.map((location, index) => {
                   const pinStyle = effectivePinStyle(project, location);
@@ -939,7 +1128,7 @@ export function App() {
               <div className="map-stage__badge"><MapTrifold size={15} weight="bold" /> Vector preview</div>
               <MapCanvas
                 ref={svgRef}
-                project={project}
+                project={displayProject}
                 selectedLocationId={selectedLocationId}
                 selectedStateFips={selectedStateFips}
                 zoom={zoom}
@@ -966,7 +1155,7 @@ export function App() {
                 onZoomChange={(nextZoom) => updateViewport({ zoom: nextZoom })}
               />
               <MapMiniMap project={project} zoom={zoom} pan={pan} onPanChange={(nextPan) => updateViewport({ pan: nextPan })} />
-              {calloutOverlaps.length ? <div className="map-stage__overlap-warning"><WarningDiamond size={15} weight="fill" /> {calloutOverlaps.length} label layout issue{calloutOverlaps.length === 1 ? "" : "s"}</div> : null}
+              {calloutOverlaps.length || leaderLineCrossings.length ? <div className="map-stage__overlap-warning"><WarningDiamond size={15} weight="fill" /> {calloutOverlaps.length} label issue{calloutOverlaps.length === 1 ? "" : "s"} · {leaderLineCrossings.length} crossed leader{leaderLineCrossings.length === 1 ? "" : "s"}</div> : null}
               <div className="map-stage__footer"><span>1200 × 720 export canvas</span><span>Albers USA projection</span><span>Space + drag to pan · drag pins or callouts to refine</span></div>
             </div>
 
@@ -975,11 +1164,12 @@ export function App() {
                 <div className="inspector__heading"><span><DownloadSimple size={18} weight="bold" /></span><div><small>Publish &amp; share</small><h2>Export map</h2></div></div>
                 <div className="inspector__body">
                   <p className="export-intro">Every export uses the same 1200 × 720 composition currently visible on the canvas.</p>
-                  <button type="button" className="export-option" onClick={() => void exportMap("svg")} disabled={exporting !== null}><BracketsCurly size={24} /><span><strong>SVG</strong><small>Scalable vector map for design tools and the web</small></span></button>
-                  <button type="button" className="export-option" onClick={() => void exportMap("png")} disabled={exporting !== null}><ImageSquare size={24} /><span><strong>PNG</strong><small>2400 × 1440 transparent-safe raster image</small></span></button>
-                  <button type="button" className="export-option" onClick={() => void exportMap("pptx")} disabled={exporting !== null}><PresentationChart size={24} /><span><strong>PowerPoint</strong><small>Editable map objects with the visible pin size and viewport</small></span></button>
+                  <button type="button" className="export-option" onClick={() => requestExport("svg")} disabled={exporting !== null}><BracketsCurly size={24} /><span><strong>SVG</strong><small>Scalable vector map for design tools and the web</small></span></button>
+                  <button type="button" className="export-option" onClick={() => requestExport("png")} disabled={exporting !== null}><ImageSquare size={24} /><span><strong>PNG</strong><small>2400 × 1440 transparent-safe raster image</small></span></button>
+                  <button type="button" className="export-option" onClick={() => requestExport("pptx")} disabled={exporting !== null}><PresentationChart size={24} /><span><strong>PowerPoint</strong><small>Editable map objects with the visible pin size and viewport</small></span></button>
                   <button type="button" className="export-option" onClick={() => void saveProject()}><FloppyDisk size={24} /><span><strong>Project JSON</strong><small>Complete editable project for later import</small></span></button>
                   <section className="export-note"><CheckCircle size={18} weight="fill" /><span><strong>Consistent output</strong>Selection outlines and editor controls are excluded from exported files.</span></section>
+                  <section className={`export-preflight-summary${exportPreflight.errors || exportPreflight.warnings ? " has-warning" : ""}`}><WarningDiamond size={18} weight="fill" /><span><strong>Preflight ready</strong>{exportPreflight.errors} errors · {exportPreflight.warnings} warnings will be reviewed before export.</span></section>
                 </div>
               </aside>
             ) : activeSidebar === "layers" ? (
@@ -1002,7 +1192,7 @@ export function App() {
                 customPins={project.customPins}
                 layers={project.layers}
                 sharedPinStyle={project.sharedPinStyle}
-                overlapCount={calloutOverlaps.length}
+                overlapCount={calloutOverlaps.length + leaderLineCrossings.length}
                 onUpdateLocation={(patch) => selectedLocation && updateLocation(selectedLocation.id, patch)}
                 onUpdateSharedPinStyle={updateSharedPinStyle}
                 onSetPinEditingScope={setPinEditingScope}
@@ -1038,9 +1228,13 @@ export function App() {
           fileName={pendingImport.fileName}
           layers={project.layers}
           targetLayerId={selectedLayer.id}
+          headers={pendingImport.headers}
+          columnMap={pendingImport.columnMap}
           onTargetLayerChange={setSelectedLayerId}
+          onColumnMapChange={updateCsvColumnMapping}
           onClose={() => setPendingImport(null)}
           onAdd={() => {
+            void createRecoveryPoint("Before CSV import", true);
             const locations = pendingImport.result.locations.map((location) => ({ ...location, layerId: selectedLayer.id }));
             commitProject((current) => arrangeProjectCallouts({ ...current, locations: [...current.locations, ...locations] }).project);
             setSelectedLocationId(pendingImport.result.locations[0]?.id ?? null);
@@ -1049,6 +1243,7 @@ export function App() {
             setPendingImport(null);
           }}
           onReplaceLayer={() => {
+            void createRecoveryPoint(`Before replacing ${selectedLayer.name}`, true);
             const locations = pendingImport.result.locations.map((location) => ({ ...location, layerId: selectedLayer.id }));
             commitProject((current) => arrangeProjectCallouts({ ...current, locations: [...current.locations.filter((location) => location.layerId !== selectedLayer.id), ...locations] }).project);
             setSelectedLocationId(pendingImport.result.locations[0]?.id ?? null);
@@ -1065,6 +1260,39 @@ export function App() {
           onApply={applyAiProposal}
           onReject={rejectAiProposal}
           onReviewLater={() => setAiProposalOpen(false)}
+        />
+      ) : null}
+      {locationDataOpen ? (
+        <LocationDataTableDialog
+          locations={project.locations}
+          layers={project.layers}
+          onUpdateLocation={updateLocation}
+          onUpdatePlace={updateLocationPlace}
+          onUpdateCompany={updateLocationCompany}
+          onBulkUpdate={bulkUpdateLocations}
+          onSelectLocation={(id) => { setSelectedLocationId(id); setSelectedStateFips(null); setActiveSidebar("map"); }}
+          onClose={() => setLocationDataOpen(false)}
+        />
+      ) : null}
+      {versionHistoryOpen ? (
+        <VersionHistoryDialog
+          snapshots={snapshots}
+          loading={snapshotLoading}
+          onCreate={() => void createRecoveryPoint()}
+          onRestore={(snapshot) => void restoreProjectSnapshot(snapshot)}
+          onClose={() => setVersionHistoryOpen(false)}
+        />
+      ) : null}
+      {pendingExport ? (
+        <ExportPreflightDialog
+          kind={pendingExport}
+          report={exportPreflight}
+          onClose={() => setPendingExport(null)}
+          onExport={() => {
+            const kind = pendingExport;
+            setPendingExport(null);
+            void exportMap(kind);
+          }}
         />
       ) : null}
       {shortcutsOpen ? <KeyboardShortcutsDialog onClose={() => setShortcutsOpen(false)} /> : null}

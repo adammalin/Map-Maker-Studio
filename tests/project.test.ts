@@ -170,6 +170,18 @@ test("schema version 4 labels migrate into editable schema version 5 callouts", 
   assert.equal(migrated.locations[0].callout.offsetY, -22);
 });
 
+test("schema version 5 projects migrate to saved City label view defaults", () => {
+  const legacy = createDefaultProject() as unknown as Record<string, unknown>;
+  legacy.schemaVersion = 5;
+  const map = legacy.map as Record<string, unknown>;
+  delete map.locationLabelMode;
+
+  const migrated = parseProjectText(JSON.stringify(legacy));
+
+  assert.equal(migrated.schemaVersion, PROJECT_SCHEMA_VERSION);
+  assert.equal(migrated.map.locationLabelMode, "city");
+});
+
 test("project parser rejects locations assigned to missing layers", () => {
   const source = createDefaultProject();
   source.locations[0].layerId = "missing-layer";

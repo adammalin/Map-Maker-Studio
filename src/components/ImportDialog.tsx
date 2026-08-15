@@ -1,18 +1,32 @@
 import { CheckCircle, FileCsv, WarningDiamond, X } from "@phosphor-icons/react";
 import type { ImportResult, MapLayer } from "../types";
+import { CSV_IMPORT_FIELDS, type CsvColumnMap, type CsvImportField } from "../lib/csv";
 
 interface ImportDialogProps {
   result: ImportResult;
   fileName: string;
   layers: MapLayer[];
   targetLayerId: string;
+  headers: string[];
+  columnMap: CsvColumnMap;
   onTargetLayerChange(id: string): void;
+  onColumnMapChange(field: CsvImportField, header: string): void;
   onAdd(): void;
   onReplaceLayer(): void;
   onClose(): void;
 }
 
-export function ImportDialog({ result, fileName, layers, targetLayerId, onTargetLayerChange, onAdd, onReplaceLayer, onClose }: ImportDialogProps) {
+const FIELD_LABELS: Record<CsvImportField, string> = {
+  city: "City / town",
+  state: "State",
+  company: "Company",
+  latitude: "Latitude",
+  longitude: "Longitude",
+  label: "Display label",
+  notes: "Notes",
+};
+
+export function ImportDialog({ result, fileName, layers, targetLayerId, headers, columnMap, onTargetLayerChange, onColumnMapChange, onAdd, onReplaceLayer, onClose }: ImportDialogProps) {
   return (
     <div className="dialog-backdrop" role="presentation">
       <section className="dialog" role="dialog" aria-modal="true" aria-labelledby="import-title" data-testid="import-dialog">
@@ -28,6 +42,14 @@ export function ImportDialog({ result, fileName, layers, targetLayerId, onTarget
             <div><FileCsv size={22} /><strong>{result.totalRows}</strong><span>CSV rows</span></div>
           </div>
           <p className="dialog__intro">City/state rows without coordinates were matched against the bundled 2025 Census place index. Supplied coordinates were kept as entered.</p>
+          <details className="column-mapping" data-testid="csv-column-mapping">
+            <summary>Column mapping <span>Adjust when a client file uses unfamiliar headings</span></summary>
+            <div className="column-mapping__grid">
+              {CSV_IMPORT_FIELDS.map((field) => (
+                <label key={field}><span>{FIELD_LABELS[field]}</span><select value={columnMap[field] ?? ""} onChange={(event) => onColumnMapChange(field, event.target.value)}><option value="">Automatic aliases</option>{headers.map((header) => <option key={`${field}-${header}`} value={header}>{header}</option>)}</select></label>
+              ))}
+            </div>
+          </details>
           <label className="import-layer-field"><span>Import into layer</span><select value={targetLayerId} onChange={(event) => onTargetLayerChange(event.target.value)}>{layers.map((layer) => <option key={layer.id} value={layer.id}>{layer.name}</option>)}</select></label>
           {result.issues.length ? (
             <div className="issue-table" role="region" aria-label="Rows that need attention">

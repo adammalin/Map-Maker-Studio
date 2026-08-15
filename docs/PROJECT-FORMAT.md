@@ -7,7 +7,7 @@ USA Map Studio project files are UTF-8 JSON documents normally saved with the `.
 ```json
 {
   "schema": "usa-map-studio/project",
-  "schemaVersion": 5,
+  "schemaVersion": 6,
   "project": {},
   "map": {},
   "viewport": {},
@@ -33,9 +33,10 @@ USA Map Studio project files are UTF-8 JSON documents normally saved with the `.
 - `labelColor` and `labelHaloColor`
 - `borderWidth`
 - `showCountyLines`, `showStateLabels`, `showLocationLabels`, and `showLegend`
+- `locationLabelMode`: `pins`, `city`, `city-company`, `selected-layer`, or `selected-location`
 - `stateColors`, keyed by two-character state FIPS code for individual state overrides
 
-Colors are stored as six-digit hex values.
+Colors are stored as six-digit hex values. `showLocationLabels` remains for compatibility; `locationLabelMode` is the authoritative saved display preset. The app materializes the selected preset without deleting or rewriting the underlying per-location label rows, and uses that same display snapshot for the canvas and every rendered export.
 
 ## Export viewport
 
@@ -85,7 +86,7 @@ Each location contains:
 - `notes`
 - `customData` for CSV columns not used by the standard schema
 
-Supported pin types are `pin`, `circle`, `square`, `diamond`, and `star`. The older `label`, `showLabel`, `labelColor`, and `labelPosition` fields remain in version 5 files for compatibility, but `callout` is the authoritative rendered label model. `visible` remains independent of `callout.visible`: hiding a location removes its pin and complete callout from rendered output while preserving all data; hiding only the callout leaves the pin visible.
+Supported pin types are `pin`, `circle`, `square`, `diamond`, and `star`. The older `label`, `showLabel`, `labelColor`, and `labelPosition` fields remain in version 6 files for compatibility, but `callout` is the authoritative rendered label model. `visible` remains independent of `callout.visible`: hiding a location removes its pin and complete callout from rendered output while preserving all data; hiding only the callout leaves the pin visible.
 
 ## Multi-row label callouts
 
@@ -138,7 +139,7 @@ Each object in `labels` stores a stable `id`, semantic `role` (`city`, `company`
 }
 ```
 
-Dragging a callout writes its exact offsets, sets `placementMode` to `manual`, and locks it. Automatic arrangement moves only unlocked callouts, tests positions around each pin, and can use left or right edge rails for dense areas. Remaining label-to-label collisions and callouts that enter the title, legend, or canvas edge are reported as layout issues. The resolved positions are stored in JSON and reused directly by SVG, PNG, and PowerPoint export rather than being recomputed during export.
+Dragging a callout writes its exact offsets, sets `placementMode` to `manual`, and locks it. Automatic arrangement moves only unlocked callouts, tests positions around each pin, can use left or right edge rails for dense areas, and penalizes candidate routes that cross existing leader lines. Remaining label-to-label collisions, crossed leaders, and callouts that enter the title, legend, or canvas edge are reported as layout issues. The resolved positions are stored in JSON and reused directly by SVG, PNG, and PowerPoint export rather than being recomputed during export.
 
 ## Autosave and recovery
 
@@ -149,9 +150,16 @@ The JSON schema is the same for manual saves and autosaves. In the desktop app:
 - A new unsaved project writes only the internal recovery JSON until the user chooses **Save project**.
 - On launch, the latest valid recovery JSON and its bound path are restored automatically.
 - New project clears the previous external-file binding before its first autosave, preventing a new map from overwriting the prior project file.
+- Version history keeps up to 24 private recovery snapshots under the app's local data directory. A snapshot stores the same complete project JSON plus a timestamp and label; automatic points are rate-limited, and major arrange, CSV, bulk-edit, and restore operations capture the previous state first.
 
 Atomic replacement writes a private temporary file beside the destination and renames it only after the complete JSON is present, reducing the chance of a partial file after interruption.
 
+Restoring a snapshot first captures the current working state, then loads the selected JSON through the normal project validator and autosave path. Recovery history is local application data and is not embedded in exported project JSON.
+
+## Export preflight
+
+Preflight derives its checks from the same label view and visibility state used by the export. It reports empty output, hidden layers and callouts, missing Company values when the selected view requests them, text collisions, safe-canvas violations, leader-line crossings, unavailable label fonts, and editable PowerPoint structure. Warnings remain reviewable rather than silently changing the map.
+
 ## Compatibility
 
-Version 0.6.0 writes schema version 5 and reads schema versions 1 through 4. Project files without `viewport` open at 100% with centered pan, which preserves compatibility with earlier version 5 drafts as well as older schemas. Version 1 and 2 projects migrate with one visible `Layer 1 - Locations`; every existing location is assigned to it. Version 1 also receives an empty `customPins` library and `null` custom-pin references. Locations from schema versions 1 through 3 default to `visible: true` when that field is absent. A version 4 location's single label becomes its first City callout row, preserving label text, visibility, color, and right/left/above/below placement. The app rejects unrelated JSON, unsupported schema versions, missing core objects, invalid coordinates, duplicate layer, custom-pin, or per-location label IDs, excessive label rows, dangling layer or custom-pin references, and malformed required fields instead of silently dropping data.
+Version 0.7.0 writes schema version 6 and reads schema versions 1 through 5. Project files without `viewport` open at 100% with centered pan. Version 1 and 2 projects migrate with one visible `Layer 1 - Locations`; every existing location is assigned to it. Version 1 also receives an empty `customPins` library and `null` custom-pin references. Locations from schema versions 1 through 3 default to `visible: true` when that field is absent. A version 4 location's single label becomes its first City callout row, preserving label text, visibility, color, and right/left/above/below placement. Version 5 projects receive `locationLabelMode: "city"` when labels were enabled or `"pins"` when they were disabled. The app rejects unrelated JSON, unsupported schema versions, missing core objects, invalid coordinates, duplicate layer, custom-pin, or per-location label IDs, excessive label rows, dangling layer or custom-pin references, and malformed required fields instead of silently dropping data.

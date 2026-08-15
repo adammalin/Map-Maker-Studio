@@ -10,6 +10,7 @@ import {
   type CalloutPlacementMode,
   type LabelPosition,
   type LeaderLineStyle,
+  type LocationLabelMode,
   type LocationCallout,
   type LocationLabel,
   type LocationLabelRole,
@@ -30,6 +31,7 @@ const CALLOUT_PLACEMENT_MODES = new Set<CalloutPlacementMode>(["auto", "manual"]
 const LEADER_LINE_STYLES = new Set<LeaderLineStyle>(["auto", "none", "straight", "elbow"]);
 const LABEL_ROLES = new Set<LocationLabelRole>(["city", "company", "custom"]);
 const LABEL_WEIGHTS = new Set<LocationLabelWeight>([400, 500, 600, 700, 800]);
+const LOCATION_LABEL_MODES = new Set<LocationLabelMode>(["pins", "city", "city-company", "selected-layer", "selected-location"]);
 const HEX_COLOR = /^#[0-9a-f]{6}$/i;
 
 export function fileSafeName(value: string): string {
@@ -271,7 +273,7 @@ export function parseProjectText(text: string): UsaMapProject {
   const input = parsed as Partial<UsaMapProject>;
   if (input.schema !== PROJECT_SCHEMA) throw new Error("This is not a USA Map Studio project file.");
   const sourceSchemaVersion = Number(input.schemaVersion);
-  if (![1, 2, 3, 4, PROJECT_SCHEMA_VERSION].includes(sourceSchemaVersion)) {
+  if (![1, 2, 3, 4, 5, PROJECT_SCHEMA_VERSION].includes(sourceSchemaVersion)) {
     throw new Error(`Project schema ${String(input.schemaVersion)} is not supported by this version.`);
   }
   if (!input.project || !input.map || !Array.isArray(input.locations)) {
@@ -307,6 +309,13 @@ export function parseProjectText(text: string): UsaMapProject {
     layerIds,
     legacyLayer?.id ?? null,
   ));
+  const showLocationLabels = input.map.showLocationLabels !== false;
+  const requestedLabelMode = LOCATION_LABEL_MODES.has(input.map.locationLabelMode as LocationLabelMode)
+    ? input.map.locationLabelMode as LocationLabelMode
+    : showLocationLabels ? "city" : "pins";
+  const locationLabelMode: LocationLabelMode = showLocationLabels
+    ? requestedLabelMode === "pins" ? "city" : requestedLabelMode
+    : "pins";
   return materializeEffectivePinStyles({
     schema: PROJECT_SCHEMA,
     schemaVersion: PROJECT_SCHEMA_VERSION,
@@ -328,7 +337,8 @@ export function parseProjectText(text: string): UsaMapProject {
       borderWidth: numberWithin(input.map.borderWidth, 1.25, 0.25, 5),
       showCountyLines: Boolean(input.map.showCountyLines),
       showStateLabels: Boolean(input.map.showStateLabels),
-      showLocationLabels: input.map.showLocationLabels !== false,
+      showLocationLabels: locationLabelMode !== "pins",
+      locationLabelMode,
       showLegend: input.map.showLegend !== false,
       stateColors: Object.fromEntries(
         Object.entries(input.map.stateColors ?? {}).filter(([, color]) => isHexColor(color)),

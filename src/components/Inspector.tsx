@@ -14,7 +14,7 @@ import { resolveCity } from "../lib/geocoder";
 import { STATE_BY_FIPS, STATES } from "../data/state-metadata";
 import { effectivePinStyle } from "../lib/layers";
 import { createLocationLabel } from "../lib/callouts";
-import type { CustomPinDesign, LocationLabel, MapLayer, MapLocation, MapSettings, SharedPinStyle } from "../types";
+import type { CustomPinDesign, LocationLabel, LocationLabelMode, MapLayer, MapLocation, MapSettings, SharedPinStyle } from "../types";
 
 const CALLOUT_FONTS = ["Aptos", "Arial", "Helvetica", "Georgia", "Times New Roman", "Trebuchet MS", "Verdana"];
 
@@ -332,7 +332,8 @@ export function Inspector({
         </section>
         <section className="form-section">
           <h3>Labels &amp; legend</h3>
-          <label className="toggle-row"><span>Location labels</span><input type="checkbox" checked={map.showLocationLabels} onChange={(event) => onUpdateMap({ showLocationLabels: event.target.checked })} /></label>
+          <label className="toggle-row"><span>Location labels</span><input type="checkbox" checked={map.locationLabelMode !== "pins"} onChange={(event) => onUpdateMap({ locationLabelMode: event.target.checked ? "city" : "pins" })} /></label>
+          <label className="field-row"><span>Label view</span><select value={map.locationLabelMode} onChange={(event) => onUpdateMap({ locationLabelMode: event.target.value as LocationLabelMode })}><option value="pins">Pins only</option><option value="city">City names</option><option value="city-company">City + Company</option><option value="selected-layer">Selected layer labels</option><option value="selected-location">Selected location label</option></select></label>
           <label className="toggle-row"><span>Map legend</span><input type="checkbox" checked={map.showLegend} onChange={(event) => onUpdateMap({ showLegend: event.target.checked })} /></label>
           <ColorField label="State label color" value={map.labelColor} onChange={(labelColor) => onUpdateMap({ labelColor })} />
           <ColorField label="Label halo" value={map.labelHaloColor} onChange={(labelHaloColor) => onUpdateMap({ labelHaloColor })} />

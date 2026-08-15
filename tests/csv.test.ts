@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseLocationsCsv } from "../src/lib/csv";
+import { getCsvHeaders, parseLocationsCsv, suggestCsvColumnMap } from "../src/lib/csv";
 import { placeCount, resolveCity } from "../src/lib/geocoder";
 
 test("bundled Census place index contains the full national places file", () => {
@@ -47,4 +47,22 @@ test("CSV import reports unresolved places without dropping valid rows", () => {
   assert.equal(result.locations.length, 1);
   assert.equal(result.issues.length, 1);
   assert.match(result.issues[0].reason, /offline Census place match/i);
+});
+
+test("CSV column mapping resolves unfamiliar client headings", () => {
+  const csv = "Town supplied by client,Region code,Vendor organization\nOak Ridge,TN,Example Manufacturing";
+  const headers = getCsvHeaders(csv);
+  const suggested = suggestCsvColumnMap(headers);
+  const result = parseLocationsCsv(csv, {
+    columnMap: {
+      ...suggested,
+      city: "Town supplied by client",
+      state: "Region code",
+      company: "Vendor organization",
+    },
+  });
+
+  assert.equal(result.locations.length, 1);
+  assert.equal(result.locations[0].city, "Oak Ridge");
+  assert.equal(result.locations[0].callout.labels.find((label) => label.role === "company")?.text, "Example Manufacturing");
 });

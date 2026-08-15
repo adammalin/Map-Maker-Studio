@@ -4,6 +4,7 @@ import type {
   LabelPosition,
   LocationCallout,
   LocationLabel,
+  LocationLabelMode,
   LocationLabelRole,
   MapLocation,
   UsaMapProject,
@@ -40,6 +41,17 @@ export interface CalloutConnector {
 export interface CalloutOverlap {
   firstLocationId: string;
   secondLocationId: string;
+}
+
+export interface LeaderLineCrossing {
+  firstLocationId: string;
+  secondLocationId: string;
+}
+
+interface ConnectorSegment {
+  locationId: string;
+  start: [number, number];
+  end: [number, number];
 }
 
 const FONT_WIDTH_FACTORS: Record<string, number> = {
@@ -110,6 +122,41 @@ export function calloutFromLegacyLocation(location: Pick<MapLocation, "id" | "la
 export function visibleCalloutLabels(callout: LocationCallout): LocationLabel[] {
   if (!callout.visible) return [];
   return callout.labels.filter((label) => label.visible && label.text.trim());
+}
+
+export function materializeLabelDisplay(
+  project: UsaMapProject,
+  context: { selectedLayerId?: string | null; selectedLocationId?: string | null } = {},
+): UsaMapProject {
+  const mode: LocationLabelMode = project.map.locationLabelMode ?? (project.map.showLocationLabels ? "city" : "pins");
+  const showLabels = mode !== "pins";
+  return {
+    ...project,
+    map: { ...project.map, showLocationLabels: showLabels, locationLabelMode: mode },
+    locations: project.locations.map((location) => {
+      const inScope = mode === "selected-layer"
+        ? location.layerId === context.selectedLayerId
+        : mode === "selected-location"
+          ? location.id === context.selectedLocationId
+          : true;
+      const allowedRoles = mode === "city"
+        ? new Set<LocationLabelRole>(["city"])
+        : mode === "city-company"
+          ? new Set<LocationLabelRole>(["city", "company"])
+          : null;
+      return {
+        ...location,
+        callout: {
+          ...location.callout,
+          visible: showLabels && inScope && location.callout.visible,
+          labels: location.callout.labels.map((label) => ({
+            ...label,
+            visible: label.visible && (!allowedRoles || allowedRoles.has(label.role)),
+          })),
+        },
+      };
+    }),
+  };
 }
 
 function characterWidth(character: string): number {
@@ -306,10 +353,54 @@ export function findCalloutOverlaps(project: UsaMapProject): CalloutOverlap[] {
   return overlaps;
 }
 
+function connectorSegments(locationId: string, connector: CalloutConnector): ConnectorSegment[] {
+  if (!connector.visible) return [];
+  return connector.points.slice(1).map((point, index) => ({
+    locationId,
+    start: connector.points[index],
+    end: point,
+  }));
+}
+
+function segmentsCross(first: ConnectorSegment, second: ConnectorSegment): boolean {
+  const orientation = (a: [number, number], b: [number, number], c: [number, number]) =>
+    (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+  const firstStart = orientation(first.start, first.end, second.start);
+  const firstEnd = orientation(first.start, first.end, second.end);
+  const secondStart = orientation(second.start, second.end, first.start);
+  const secondEnd = orientation(second.start, second.end, first.end);
+  const epsilon = 0.001;
+  return firstStart * firstEnd < -epsilon && secondStart * secondEnd < -epsilon;
+}
+
+function projectedConnectorSegments(entry: ProjectedCallout): ConnectorSegment[] {
+  return connectorSegments(
+    entry.location.id,
+    calloutConnector(entry.point, entry.location.callout, entry.metrics, entry.pinSize * 0.55),
+  );
+}
+
+export function findLeaderLineCrossings(project: UsaMapProject): LeaderLineCrossing[] {
+  const segments = projectedCallouts(project).flatMap(projectedConnectorSegments);
+  const pairs = new Set<string>();
+  const crossings: LeaderLineCrossing[] = [];
+  for (let first = 0; first < segments.length; first += 1) {
+    for (let second = first + 1; second < segments.length; second += 1) {
+      if (segments[first].locationId === segments[second].locationId || !segmentsCross(segments[first], segments[second])) continue;
+      const ids = [segments[first].locationId, segments[second].locationId].sort();
+      const key = ids.join("::");
+      if (pairs.has(key)) continue;
+      pairs.add(key);
+      crossings.push({ firstLocationId: ids[0], secondLocationId: ids[1] });
+    }
+  }
+  return crossings;
+}
+
 export function arrangeProjectCallouts(
   project: UsaMapProject,
   options: { includeLocked?: boolean } = {},
-): { project: UsaMapProject; overlaps: CalloutOverlap[] } {
+): { project: UsaMapProject; overlaps: CalloutOverlap[]; crossings: LeaderLineCrossing[] } {
   const next = structuredClone(project);
   const entries = projectedCallouts(next);
   const locationById = new Map(next.locations.map((location) => [location.id, location]));
@@ -319,6 +410,7 @@ export function arrangeProjectCallouts(
     .filter(({ location }) => !fixedIds.has(location.id))
     .sort((first, second) => first.point[1] - second.point[1] || first.point[0] - second.point[0]);
   const occupied = fixed.map((entry) => calloutBox(entry.point, entry.location.callout, entry.metrics));
+  const occupiedSegments = fixed.flatMap(projectedConnectorSegments);
   const pins = entries.map((entry) => ({
     id: entry.location.id,
     box: {
@@ -337,11 +429,21 @@ export function arrangeProjectCallouts(
       const box = calloutBox(entry.point, candidate, entry.metrics);
       const labelHits = occupied.filter((other) => boxesOverlap(box, other, 5)).length;
       const pinHits = pins.filter((pin) => pin.id !== entry.location.id && boxesOverlap(box, pin.box, 2)).length;
+      const candidateCallout = { ...entry.location.callout, ...candidate };
+      const candidateSegments = connectorSegments(
+        entry.location.id,
+        calloutConnector(entry.point, candidateCallout, entry.metrics, entry.pinSize * 0.55),
+      );
+      const crossingHits = candidateSegments.reduce(
+        (count, segment) => count + occupiedSegments.filter((other) => segmentsCross(segment, other)).length,
+        0,
+      );
       const distance = Math.hypot(candidate.offsetX, candidate.offsetY);
       return {
         candidate,
         box,
-        score: boxOutsidePenalty(box, bottomBoundary) + labelHits * 100_000 + pinHits * 20_000 + distance + index * 0.01,
+        candidateSegments,
+        score: boxOutsidePenalty(box, bottomBoundary) + labelHits * 100_000 + crossingHits * 35_000 + pinHits * 20_000 + distance + index * 0.01,
       };
     }).sort((first, second) => first.score - second.score);
     const best = ranked[0];
@@ -354,25 +456,36 @@ export function arrangeProjectCallouts(
       locked: false,
     };
     occupied.push(best.box);
+    occupiedSegments.push(...best.candidateSegments);
   }
 
-  return { project: next, overlaps: findCalloutOverlaps(next) };
+  return {
+    project: next,
+    overlaps: findCalloutOverlaps(next),
+    crossings: findLeaderLineCrossings(next),
+  };
 }
 
 export function enableProjectLocationLabels(project: UsaMapProject): {
   project: UsaMapProject;
   revealedAll: boolean;
   overlaps: CalloutOverlap[];
+  crossings: LeaderLineCrossing[];
 } {
   const withLabelsEnabled: UsaMapProject = {
     ...project,
-    map: { ...project.map, showLocationLabels: true },
+    map: {
+      ...project.map,
+      showLocationLabels: true,
+      locationLabelMode: project.map.locationLabelMode === "pins" ? "city" : project.map.locationLabelMode,
+    },
   };
   if (project.locations.some((location) => location.callout.visible)) {
     return {
       project: withLabelsEnabled,
       revealedAll: false,
       overlaps: findCalloutOverlaps(withLabelsEnabled),
+      crossings: findLeaderLineCrossings(withLabelsEnabled),
     };
   }
 
