@@ -63,7 +63,14 @@ export function MapMiniMap({ project, zoom, pan, onPanChange }: MapMiniMapProps)
               fill={project.map.stateColors[state.properties.STATEFP] ?? project.map.landColor}
             />
           ))}
-          <path d={path(stateBoundaries) ?? undefined} fill="none" stroke={project.map.borderColor} strokeWidth="2.6" vectorEffect="non-scaling-stroke" />
+          <path
+            d={path(stateBoundaries) ?? undefined}
+            data-testid="map-minimap-boundaries"
+            fill="none"
+            stroke={project.map.borderColor}
+            strokeWidth="1"
+            vectorEffect="non-scaling-stroke"
+          />
           {locations.map(({ location, point, color }) => <circle key={location.id} cx={point[0]} cy={point[1]} r="6.5" fill={color} stroke="#ffffff" strokeWidth="2" vectorEffect="non-scaling-stroke" />)}
         </g>
         <rect

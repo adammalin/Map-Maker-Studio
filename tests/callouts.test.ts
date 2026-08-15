@@ -5,6 +5,7 @@ import {
   arrangeProjectCallouts,
   calloutConnector,
   createLocationLabel,
+  enableProjectLocationLabels,
   findCalloutOverlaps,
   measureCallout,
 } from "../src/lib/callouts";
@@ -77,4 +78,34 @@ test("leader lines begin outside the pin and support elbow routing", () => {
   assert.equal(connector.style, "elbow");
   assert.equal(connector.points.length, 3);
   assert.notDeepEqual(connector.points[0], [300, 300]);
+});
+
+test("enabling labels recovers a project where every location callout is hidden", () => {
+  const project = createDefaultProject();
+  project.map.showLocationLabels = false;
+  project.locations.forEach((location) => {
+    location.showLabel = false;
+    location.callout.visible = false;
+  });
+
+  const enabled = enableProjectLocationLabels(project);
+
+  assert.equal(enabled.revealedAll, true);
+  assert.equal(enabled.project.map.showLocationLabels, true);
+  assert.ok(enabled.project.locations.every((location) => location.showLabel && location.callout.visible));
+  assert.ok(project.locations.every((location) => !location.showLabel && !location.callout.visible));
+});
+
+test("enabling labels preserves deliberate per-location hidden states", () => {
+  const project = createDefaultProject();
+  project.map.showLocationLabels = false;
+  project.locations[0].callout.visible = true;
+  project.locations[1].callout.visible = false;
+
+  const enabled = enableProjectLocationLabels(project);
+
+  assert.equal(enabled.revealedAll, false);
+  assert.equal(enabled.project.map.showLocationLabels, true);
+  assert.equal(enabled.project.locations[0].callout.visible, true);
+  assert.equal(enabled.project.locations[1].callout.visible, false);
 });

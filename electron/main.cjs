@@ -349,6 +349,7 @@ async function runSmoke(window) {
   const navigationInitial = await window.webContents.executeJavaScript(`(() => ({
     minimap: Boolean(document.querySelector('[data-testid="map-minimap"]')),
     viewport: Boolean(document.querySelector('[data-testid="map-minimap-viewport"]')),
+    boundaryStroke: document.querySelector('[data-testid="map-minimap-boundaries"]')?.getAttribute('stroke-width'),
     zoom: document.querySelector('[data-testid="zoom-status"] strong')?.textContent,
     controls: ['zoom-out', 'zoom-in', 'zoom-actual', 'zoom-fit', 'keyboard-shortcuts']
       .every((id) => Boolean(document.querySelector('[data-testid="' + id + '"]'))),
@@ -404,7 +405,7 @@ async function runSmoke(window) {
   await window.webContents.executeJavaScript(`document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }))`);
   await new Promise((resolve) => setTimeout(resolve, 80));
   const shortcutsClosed = await window.webContents.executeJavaScript(`!document.querySelector('[data-testid="keyboard-shortcuts-dialog"]')`);
-  result.canvasNavigation = navigationInitial.minimap && navigationInitial.viewport && navigationInitial.zoom === '100%' && navigationInitial.controls &&
+  result.canvasNavigation = navigationInitial.minimap && navigationInitial.viewport && navigationInitial.boundaryStroke === '1' && navigationInitial.zoom === '100%' && navigationInitial.controls &&
     zoomedByButton.zoom === '120%' && zoomedByButton.viewportWidth > 0 && zoomedByButton.viewportWidth < 1200 &&
     fitByKeyboard === '100%' && minimapTransformBefore !== minimapTransformAfter &&
     spaceReady && spacePanTransformBefore !== spacePanTransformAfter && spaceReleased && shortcutsOpened && shortcutsClosed;

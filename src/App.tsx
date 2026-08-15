@@ -35,7 +35,7 @@ import { downloadBlob, prepareSvgMarkup, projectToPowerPoint, svgToPng } from ".
 import { fileSafeName, mergeLocationPatch, parseProjectText, serializeProject } from "./lib/project";
 import { buildMcpProposal, validateProjectCandidate } from "./lib/mcp-proposals";
 import { createCustomPinDesign } from "./lib/custom-pin";
-import { arrangeProjectCallouts, findCalloutOverlaps } from "./lib/callouts";
+import { arrangeProjectCallouts, enableProjectLocationLabels, findCalloutOverlaps } from "./lib/callouts";
 import {
   applySharedPinStylePatch,
   effectivePinStyle,
@@ -184,7 +184,17 @@ export function App() {
   }
 
   function updateMap(patch: Partial<MapSettings>) {
-    commitProject((current) => ({ ...current, map: { ...current.map, ...patch } }));
+    const revealingAllLabels = patch.showLocationLabels === true
+      && !project.locations.some((location) => location.callout.visible);
+    commitProject((current) => {
+      const next = { ...current, map: { ...current.map, ...patch } };
+      return patch.showLocationLabels === true
+        ? enableProjectLocationLabels(next).project
+        : next;
+    });
+    if (revealingAllLabels) {
+      showNotice("All location labels were shown and arranged. Individual labels can still be hidden per location.");
+    }
   }
 
   function updateLocation(id: string, patch: Partial<MapLocation>) {

@@ -359,6 +359,35 @@ export function arrangeProjectCallouts(
   return { project: next, overlaps: findCalloutOverlaps(next) };
 }
 
+export function enableProjectLocationLabels(project: UsaMapProject): {
+  project: UsaMapProject;
+  revealedAll: boolean;
+  overlaps: CalloutOverlap[];
+} {
+  const withLabelsEnabled: UsaMapProject = {
+    ...project,
+    map: { ...project.map, showLocationLabels: true },
+  };
+  if (project.locations.some((location) => location.callout.visible)) {
+    return {
+      project: withLabelsEnabled,
+      revealedAll: false,
+      overlaps: findCalloutOverlaps(withLabelsEnabled),
+    };
+  }
+
+  const revealed: UsaMapProject = {
+    ...withLabelsEnabled,
+    locations: withLabelsEnabled.locations.map((location) => ({
+      ...location,
+      showLabel: true,
+      callout: { ...location.callout, visible: true },
+    })),
+  };
+  const arranged = arrangeProjectCallouts(revealed);
+  return { ...arranged, revealedAll: true };
+}
+
 export function primaryCalloutText(location: MapLocation): string {
   return visibleCalloutLabels(location.callout)[0]?.text || location.label;
 }
