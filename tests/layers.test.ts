@@ -6,6 +6,7 @@ import {
   effectivePinStyle,
   materializeEffectivePinStyles,
   setPinEditingScope,
+  uniqueCityCount,
 } from "../src/lib/layers";
 
 test("new projects default to editing one shared style across all pins", () => {
@@ -65,4 +66,12 @@ test("export snapshots materialize effective shared styles without mutating the 
 
   assert.ok(snapshot.locations.every((location) => location.pinSize === 31));
   assert.ok(project.locations.every((location) => location.pinSize === 8));
+});
+
+test("city counts collapse repeated contract rows in the same city and state", () => {
+  const project = createDefaultProject();
+  project.locations[1].city = `  ${project.locations[0].city.toUpperCase()}  `;
+  project.locations[1].state = project.locations[0].state.toLowerCase();
+
+  assert.equal(uniqueCityCount(project.locations), project.locations.length - 1);
 });

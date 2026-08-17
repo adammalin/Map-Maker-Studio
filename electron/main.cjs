@@ -1112,7 +1112,7 @@ async function runSmoke(window) {
     pendingProposal: Boolean(document.querySelector('[data-testid="ai-proposal-banner"]')),
     viewportTransform: document.querySelector('[data-testid="map-viewport-transform"]')?.getAttribute('transform') || null,
   }))()`);
-  result.autosaveRestoredOnLaunch = autosaveRestoredState.version === "v0.7.0" &&
+  result.autosaveRestoredOnLaunch = autosaveRestoredState.version === "v0.8.0" &&
     autosaveRestoredState.locationCount === String(currentProject.locations.length) &&
     autosaveRestoredState.layerCount === "2" &&
     autosaveRestoredState.customPinCount === currentProject.locations.length &&

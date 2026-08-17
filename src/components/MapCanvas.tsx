@@ -3,7 +3,7 @@ import type { Feature, Geometry } from "geojson";
 import { STATE_BY_FIPS } from "../data/state-metadata";
 import { calloutBox, calloutConnector, measureCallout, primaryCalloutText } from "../lib/callouts";
 import { customPinTransform, scopedCustomPinInnerMarkup } from "../lib/custom-pin";
-import { effectivePinStyle, svgLayerId, visibleLocations } from "../lib/layers";
+import { effectivePinStyle, svgLayerId, uniqueCityCount, visibleLocations } from "../lib/layers";
 import { countyBoundaries, mapPath as path, projection, stateBoundaries, states } from "../lib/map-geometry";
 import type { CustomPinDesign, MapLocation, UsaMapProject } from "../types";
 import type { EffectivePinStyle } from "../lib/layers";
@@ -33,7 +33,7 @@ function starPoints(radius: number): string {
   }).join(" ");
 }
 
-function PinSymbol({ location, style, customPin }: { location: MapLocation; style: EffectivePinStyle; customPin?: CustomPinDesign }) {
+function PinSymbol({ location, style, customPin, scopePrefix = "map" }: { location: MapLocation; style: EffectivePinStyle; customPin?: CustomPinDesign; scopePrefix?: string }) {
   const size = style.pinSize;
   if (customPin) {
     return (
@@ -44,7 +44,7 @@ function PinSymbol({ location, style, customPin }: { location: MapLocation; styl
         transform={customPinTransform(customPin.viewBox, size)}
         style={{ color: style.pinColor }}
         pointerEvents="none"
-        dangerouslySetInnerHTML={{ __html: scopedCustomPinInnerMarkup(customPin, `map-${location.id}`) }}
+        dangerouslySetInnerHTML={{ __html: scopedCustomPinInnerMarkup(customPin, `${scopePrefix}-${location.id}`) }}
       />
     );
   }
@@ -119,6 +119,14 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(function MapC
     () => new Map(project.customPins.map((design) => [design.id, design])),
     [project.customPins],
   );
+  const visibleLegendLayers = useMemo(() => project.layers.map((layer) => {
+    const locations = layer.visible
+      ? project.locations.filter((location) => location.layerId === layer.id && location.visible)
+      : [];
+    return { layer, locations, cityCount: uniqueCityCount(locations) };
+  }).filter((entry) => entry.locations.length > 0), [project.layers, project.locations]);
+  const layerLegendHeight = 54 + visibleLegendLayers.length * 20;
+  const layerLegendTop = MAP_CANVAS_HEIGHT - layerLegendHeight - 12;
 
   const groupTransform = `translate(${pan.x} ${pan.y}) translate(${MAP_TRANSFORM_CENTER.x} ${MAP_TRANSFORM_CENTER.y}) scale(${zoom}) translate(${-MAP_TRANSFORM_CENTER.x} ${-MAP_TRANSFORM_CENTER.y})`;
 
@@ -482,7 +490,37 @@ export const MapCanvas = forwardRef<SVGSVGElement, MapCanvasProps>(function MapC
           ) : null)}
         </g>
       </g>
-      {project.map.showLegend ? (
+      {project.map.showLegend && visibleLegendLayers.length > 1 ? (
+        <g transform={`translate(54 ${layerLegendTop})`} aria-label="Map layer legend">
+          <rect x="0" y="0" width="370" height={layerLegendHeight} fill="#ffffff" stroke="#c8d3ce" strokeWidth="1" />
+          <text x="18" y="18" fill="#00662c" fontFamily="Aptos, Arial, sans-serif" fontSize="8" fontWeight="800" letterSpacing="0.8">
+            MAP LAYERS
+          </text>
+          {visibleLegendLayers.map(({ layer, locations, cityCount }, index) => {
+            const representative = locations[0];
+            const style = { ...effectivePinStyle(project, representative), pinSize: 10 };
+            const customPin = style.customPinId ? customPins.get(style.customPinId) : undefined;
+            const rowY = 36 + index * 20;
+            return (
+              <g key={layer.id} data-legend-layer-id={layer.id}>
+                <g transform={`translate(18 ${rowY})`}>
+                  <PinSymbol location={representative} style={style} customPin={customPin} scopePrefix="legend" />
+                </g>
+                <text x="34" y={rowY + 3} fill="#373a36" fontFamily="Aptos, Arial, sans-serif" fontSize="9.2" fontWeight="700">
+                  {layer.name}
+                </text>
+                <text x="350" y={rowY + 3} textAnchor="end" fill="#526966" fontFamily="Aptos, Arial, sans-serif" fontSize="8.5" fontWeight="700">
+                  {cityCount} {cityCount === 1 ? "city" : "cities"}
+                </text>
+              </g>
+            );
+          })}
+          <line x1="18" x2="37" y1={layerLegendHeight - 13} y2={layerLegendHeight - 13} stroke={project.map.borderColor} strokeWidth="1.4" />
+          <text x="45" y={layerLegendHeight - 9} fill="#526966" fontFamily="Aptos, Arial, sans-serif" fontSize="8.5" fontWeight="600">
+            2025 Census geography
+          </text>
+        </g>
+      ) : project.map.showLegend ? (
         <g transform="translate(54 684)" aria-label="Map legend">
           <rect x="0" y="-24" width="286" height="34" fill="#ffffff" stroke="#c8d3ce" strokeWidth="1" />
           <circle cx="18" cy="-7" r="5" fill={project.sharedPinStyle.enabled ? project.sharedPinStyle.pinColor : "#00662c"} />

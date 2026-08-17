@@ -95,7 +95,7 @@ def footer(pdf, page_number):
     pdf.rect(0, 0, PAGE_W, 48, stroke=0, fill=1)
     pdf.setFillColor(WHITE)
     pdf.setFont("Helvetica", 7.2)
-    pdf.drawString(40, 28, "USA Map Studio v0.7.0 | Local desktop quick start | August 14, 2026")
+    pdf.drawString(40, 28, "USA Map Studio v0.8.0 | Local desktop quick start | August 17, 2026")
     pdf.drawRightString(572, 28, f"PAGE {page_number} OF 6")
 
 
@@ -235,7 +235,7 @@ def build_pdf(output):
     page_header(pdf, "Publish and recover | local-first workflow", "Export editable slide objects.", "SVG, PNG, PowerPoint, and project JSON share one composition.", 4)
     step_card(pdf, "1", "SVG", "Scalable vector artwork with a named group for each visible location layer.", 40, 516, 120, 92)
     step_card(pdf, "2", "PNG", "A 2400 x 1440 raster image for documents, email, and quick review.", 174, 516, 120, 92, SOFT_NAVY, NAVY)
-    step_card(pdf, "3", "PPTX", "Editable states, separate label text boxes, leader lines, pins, and legend.", 308, 516, 120, 92, PALE, BLUE)
+    step_card(pdf, "3", "PPTX", "Editable states, labels, lines, pins, and a layer legend with unique city counts.", 308, 516, 120, 92, PALE, BLUE)
     step_card(pdf, "4", "JSON", "The complete project: export viewport, label formatting and placement, layers, data, and embedded pin artwork.", 442, 516, 130, 92, SOFT_GREEN, GREEN)
     label(pdf, "Good working sequence", 40, 478)
     bullet(pdf, "1  Save and capture a version", "Choose a .usmap.json path. Open Version history before a major edit or rely on rotating automatic recovery points.", 40, 456, 532)

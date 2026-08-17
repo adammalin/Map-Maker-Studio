@@ -118,6 +118,34 @@ test("PowerPoint export omits hidden layers and prefixes visible objects for the
   assert.match(notesXml ?? "", /Layer #2 - IO cities \(hidden\)/);
 });
 
+test("PowerPoint export creates an editable layer-aware legend with city counts", async () => {
+  const project = createDefaultProject();
+  project.sharedPinStyle.enabled = false;
+  project.layers[0].name = "US ITER only";
+  project.layers.push({
+    id: "layer-non-us",
+    name: "Non-U.S. ITER only",
+    description: "Non-U.S. funding-source locations",
+    visible: true,
+    createdAt: new Date().toISOString(),
+  });
+  project.locations[1].layerId = "layer-non-us";
+  project.locations[1].pinType = "diamond";
+  project.locations[1].pinColor = "#ff9e1b";
+  project.locations[2].city = project.locations[0].city;
+  project.locations[2].state = project.locations[0].state;
+  const archive = await JSZip.loadAsync(new Uint8Array(await projectToPowerPoint(project)));
+  const slideXml = await archive.file("ppt/slides/slide1.xml")?.async("string");
+  assert.ok(slideXml);
+  assert.match(slideXml, /name="Layer legend heading"/);
+  assert.match(slideXml, />MAP LAYERS</);
+  assert.match(slideXml, /name="Layer legend label - US ITER only"/);
+  assert.match(slideXml, /name="Layer legend label - Non-U.S. ITER only"/);
+  assert.match(slideXml, />6 cities</);
+  assert.match(slideXml, />1 city</);
+  assert.match(slideXml, /name="Layer legend geography source"/);
+});
+
 test("PowerPoint export omits individually hidden locations without deleting their data", async () => {
   const project = createDefaultProject();
   project.locations[0].visible = false;

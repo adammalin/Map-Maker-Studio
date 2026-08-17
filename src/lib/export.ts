@@ -3,7 +3,7 @@ import type { Feature, Geometry } from "geojson";
 import { STATE_BY_FIPS } from "../data/state-metadata";
 import type { MapLocation, UsaMapProject } from "../types";
 import type { EffectivePinStyle } from "./layers";
-import { effectivePinStyle, materializeEffectivePinStyles, visibleLocations } from "./layers";
+import { effectivePinStyle, materializeEffectivePinStyles, uniqueCityCount, visibleLocations } from "./layers";
 import { countyBoundaries, mapPath, projection, stateBoundaries, states } from "./map-geometry";
 import { calloutBox, calloutConnector, measureCallout } from "./callouts";
 
@@ -476,7 +476,111 @@ export async function projectToPowerPoint(
     }
   }
 
-  if (project.map.showLegend) {
+  const visibleLegendLayers = project.layers.map((layer) => {
+    const locations = layer.visible
+      ? project.locations.filter((location) => location.layerId === layer.id && location.visible)
+      : [];
+    return { layer, locations, cityCount: uniqueCityCount(locations) };
+  }).filter((entry) => entry.locations.length > 0);
+  if (project.map.showLegend && visibleLegendLayers.length > 1) {
+    const layerLegendHeightPx = 54 + visibleLegendLayers.length * 20;
+    const layerLegendTopPx = CANVAS_HEIGHT - layerLegendHeightPx - 12;
+    const [legendX, legendY] = canvasPointToSlide([54, layerLegendTopPx]);
+    const legendWidth = 370 * CANVAS_SCALE;
+    const legendHeight = layerLegendHeightPx * CANVAS_SCALE;
+    slide.addShape(SHAPE.rect, {
+      x: legendX,
+      y: legendY,
+      w: legendWidth,
+      h: legendHeight,
+      fill: { color: "FFFFFF" },
+      line: { color: "C8D3CE", width: 0.75 },
+      objectName: "Layer legend background",
+    });
+    slide.addText("MAP LAYERS", {
+      x: legendX + 0.15,
+      y: legendY + 0.07,
+      w: 1.1,
+      h: 0.16,
+      margin: 0,
+      fontFace: "Aptos",
+      fontSize: 6.4,
+      bold: true,
+      color: "00662C",
+      charSpacing: 0.8,
+      objectName: "Layer legend heading",
+    });
+    visibleLegendLayers.forEach(({ layer, locations, cityCount }, index) => {
+      const representative = locations[0];
+      const style = { ...effectivePinStyle(project, representative), pinSize: 10 };
+      const rowYpx = layerLegendTopPx + 36 + index * 20;
+      const center = canvasPointToSlide([72, rowYpx]);
+      const customPin = style.customPinId ? customPins.get(style.customPinId) : undefined;
+      if (customPin) {
+        const extent = customPinSlideExtent(customPin.viewBox, 12 * CANVAS_SCALE);
+        slide.addImage({
+          data: svgDataUri(customPinSvg(customPin.svg, style.pinColor)),
+          x: center[0] - extent.width / 2,
+          y: center[1] - extent.height / 2,
+          w: extent.width,
+          h: extent.height,
+          objectName: `Layer legend symbol - ${layer.name}`,
+        });
+      } else {
+        addMapPin(slide, representative, style, center, 12 * CANVAS_SCALE, "[Layer legend] ");
+      }
+      const [labelX, labelY] = canvasPointToSlide([88, rowYpx - 8]);
+      slide.addText(layer.name, {
+        x: labelX,
+        y: labelY,
+        w: 2.3,
+        h: 0.16,
+        margin: 0,
+        fontFace: "Aptos",
+        fontSize: 6.9,
+        bold: true,
+        color: "373A36",
+        objectName: `Layer legend label - ${layer.name}`,
+      });
+      const [countX, countY] = canvasPointToSlide([306, rowYpx - 8]);
+      slide.addText(`${cityCount} ${cityCount === 1 ? "city" : "cities"}`, {
+        x: countX,
+        y: countY,
+        w: 0.82,
+        h: 0.16,
+        margin: 0,
+        align: "right",
+        fontFace: "Aptos",
+        fontSize: 6.4,
+        bold: true,
+        color: "526966",
+        objectName: `Layer legend count - ${layer.name}`,
+      });
+    });
+    const footerYpx = layerLegendTopPx + layerLegendHeightPx - 13;
+    const [lineX, lineY] = canvasPointToSlide([72, footerYpx]);
+    slide.addShape(SHAPE.line, {
+      x: lineX,
+      y: lineY,
+      w: 19 * CANVAS_SCALE,
+      h: 0,
+      line: { color: hex(project.map.borderColor), width: 1.05 },
+      objectName: "Layer legend boundary symbol",
+    });
+    const [sourceX, sourceY] = canvasPointToSlide([99, footerYpx - 7]);
+    slide.addText("2025 Census geography", {
+      x: sourceX,
+      y: sourceY,
+      w: 1.25,
+      h: 0.15,
+      margin: 0,
+      fontFace: "Aptos",
+      fontSize: 6.4,
+      bold: true,
+      color: "526966",
+      objectName: "Layer legend geography source",
+    });
+  } else if (project.map.showLegend) {
     const mappedLocations = visibleLocations(project);
     const [legendX, legendY] = canvasPointToSlide([54, 660]);
     const legendWidth = 286 * CANVAS_SCALE;

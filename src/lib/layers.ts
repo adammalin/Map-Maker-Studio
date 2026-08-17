@@ -36,6 +36,16 @@ export function visibleLocations(project: UsaMapProject): MapLocation[] {
   return project.locations.filter((location) => location.visible && visible.has(location.layerId));
 }
 
+export function uniqueCityCount(locations: Iterable<Pick<MapLocation, "city" | "state">>): number {
+  const cityKeys = new Set<string>();
+  for (const location of locations) {
+    const city = location.city.normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
+    const state = location.state.normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
+    cityKeys.add(`${city}|${state}`);
+  }
+  return cityKeys.size;
+}
+
 export function layerName(project: Pick<UsaMapProject, "layers">, layerId: string): string {
   return project.layers.find((layer) => layer.id === layerId)?.name ?? "Unknown layer";
 }
