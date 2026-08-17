@@ -254,14 +254,15 @@ def build_pdf(output):
     step_card(pdf, "1", "KEEP THE APP OPEN", "The setup script registers usa_map_studio. Restart the AI client, open USA Map Studio, then use /mcp to confirm the connection.", 40, 516, 166, 100)
     step_card(pdf, "2", "ASK FOR A DRAFT", "The AI reads the named open project, uses its current timestamp, and stages one proposal. No map or saved file changes yet.", 223, 516, 166, 100, SOFT_NAVY, NAVY)
     step_card(pdf, "3", "REVIEW IN THE APP", "Compare Before and After. Apply or Reject. After Apply, check the canvas and autosave status; Save is only needed to choose a file path.", 406, 516, 166, 100, PALE, BLUE)
-    label(pdf, "Manual connection commands", 40, 478)
+    label(pdf, "Connection commands", 40, 478)
     code_box(pdf, "Register or repair", [
-        "npm run mcp:install",
+        "Rerun the normal platform setup script",
         "# Restart ChatGPT desktop or Codex, then use /mcp",
     ], 40, 380, 254, 78, GREEN)
     code_box(pdf, "Remove managed connection", [
-        "npm run mcp:remove",
-        "# Existing unrelated MCP settings remain in place",
+        "Mac: Remove-USA-Map-Studio-MCP.command",
+        "Windows: Remove-USA-Map-Studio-MCP.cmd",
+        "# Unrelated MCP settings remain in place",
     ], 318, 380, 254, 78, NAVY)
     label(pdf, "What the AI can do", 40, 346)
     bullet(pdf, "Read", "Check app status, read the project, list ordered layers or locations, and validate project JSON.", 40, 324, 250)

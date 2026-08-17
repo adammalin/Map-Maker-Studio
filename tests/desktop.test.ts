@@ -28,6 +28,10 @@ test("Electron renderer keeps Node integration disabled", () => {
 test("source setup scripts build and smoke-test without creating installers", () => {
   const mac = fs.readFileSync(path.join(root, "scripts", "setup-macos.zsh"), "utf8");
   const windows = fs.readFileSync(path.join(root, "scripts", "setup-windows.ps1"), "utf8");
+  const removeMac = fs.readFileSync(path.join(root, "scripts", "remove-map-mcp-macos.zsh"), "utf8");
+  const removeWindows = fs.readFileSync(path.join(root, "scripts", "remove-map-mcp-windows.ps1"), "utf8");
+  const removeMacLauncher = fs.readFileSync(path.join(root, "Remove-USA-Map-Studio-MCP.command"), "utf8");
+  const removeWindowsLauncher = fs.readFileSync(path.join(root, "Remove-USA-Map-Studio-MCP.cmd"), "utf8");
   const guideSource = fs.readFileSync(path.join(root, "scripts", "create_user_guide_pdf.py"), "utf8");
   const readme = fs.readFileSync(path.join(root, "README.md"), "utf8");
   assert.match(mac, /npm run build/);
@@ -42,6 +46,12 @@ test("source setup scripts build and smoke-test without creating installers", ()
   assert.match(windows, /configure-map-mcp\.mjs.*install/);
   assert.match(mac, /Start-USA-Map-Studio\.command/);
   assert.match(windows, /Start-USA-Map-Studio\.cmd/);
+  assert.match(removeMac, /\.runtime\/node-current\/bin\/node/);
+  assert.match(removeMac, /configure-map-mcp\.mjs" remove/);
+  assert.match(removeWindows, /\.runtime\\node-command\.txt/);
+  assert.match(removeWindows, /configure-map-mcp\.mjs"\) remove/);
+  assert.match(removeMacLauncher, /remove-map-mcp-macos\.zsh/);
+  assert.match(removeWindowsLauncher, /remove-map-mcp-windows\.ps1/);
   assert.match(guideSource, /Mac relaunch/);
   assert.match(guideSource, /Windows relaunch/);
   assert.match(guideSource, /multi-row label callouts/i);
@@ -51,6 +61,8 @@ test("source setup scripts build and smoke-test without creating installers", ()
   assert.match(guideSource, /https:\/\/github\.com\/adammalin\/Map-Maker-Studio/);
   assert.match(readme, /\$HOME\/Map-Maker-Studio\/Start-USA-Map-Studio\.command/);
   assert.match(readme, /\$env:USERPROFILE\\Map-Maker-Studio\\Start-USA-Map-Studio\.cmd/);
+  assert.match(readme, /\$HOME\/Map-Maker-Studio\/Remove-USA-Map-Studio-MCP\.command/);
+  assert.match(readme, /\$env:USERPROFILE\\Map-Maker-Studio\\Remove-USA-Map-Studio-MCP\.cmd/);
   assert.match(readme, /schema version 6/i);
   assert.doesNotMatch(`${mac}\n${windows}`, /maker-squirrel|maker-dmg|create-installer/i);
 });

@@ -91,11 +91,25 @@ The MCP server exposes read tools for app status, the complete current project, 
 
 Applying a proposal changes the working map and preserves Undo. The normal autosave pipeline then updates the bound `.usmap.json` project file and the internal recovery JSON. If the project does not have a file path yet, only the recovery JSON is updated. If the map changes after a proposal is prepared, the app marks it stale and requires a fresh proposal.
 
-After setup, restart ChatGPT desktop or Codex and use `/mcp` to confirm `usa_map_studio`. Manual commands are also available:
+After setup, restart ChatGPT desktop or Codex and use `/mcp` to confirm `usa_map_studio`. Development commands are available when Node.js is already on your `PATH`:
 
 ```bash
 npm run mcp:install
 npm run mcp:remove
+```
+
+To remove the managed connection reliably after a source-based installation, use the checked-in cleanup launcher. It finds either the private Node.js runtime prepared by setup or a compatible system runtime, and it leaves unrelated MCP settings unchanged.
+
+macOS - double-click `Remove-USA-Map-Studio-MCP.command`, or run:
+
+```zsh
+/bin/zsh "$HOME/Map-Maker-Studio/Remove-USA-Map-Studio-MCP.command"
+```
+
+Windows - double-click `Remove-USA-Map-Studio-MCP.cmd`, or run:
+
+```powershell
+& "$env:USERPROFILE\Map-Maker-Studio\Remove-USA-Map-Studio-MCP.cmd"
 ```
 
 Other local MCP clients can launch `mcp/server.mjs` with Node.js from this project directory and set `USA_MAP_MCP_RUNTIME_FILE` to the runtime file shown by the app. ChatGPT web cannot reach this private desktop bridge directly; a future hosted plugin would be a separate deployment and security boundary.
